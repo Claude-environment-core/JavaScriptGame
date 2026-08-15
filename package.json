@@ -1,0 +1,12 @@
+{
+  "name": "javascript-game",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser prototypes plus a JavaScript port of the Simple3DPlayground squad simulation.",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "snapshot": "node tools/parity-snapshot.js",
+    "serve": "python3 -m http.server 8000"
+  }
+}
