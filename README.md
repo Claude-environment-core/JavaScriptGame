@@ -14,6 +14,21 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000`.
 
+## Deploy to GitHub Pages
+
+This repository includes a GitHub Actions workflow at `/home/runner/work/JavaScriptGame/JavaScriptGame/.github/workflows/deploy-pages.yml` that publishes the static site to GitHub Pages whenever changes land on `main`.
+
+To enable it in GitHub:
+
+1. Open the repository on GitHub.
+2. Go to **Settings** → **Pages**.
+3. Set **Source** to **GitHub Actions**.
+4. Push or merge a change to `main`, or run the workflow manually from the **Actions** tab.
+
+After the deployment completes, the game will be available at:
+
+`https://claude-environment-core.github.io/JavaScriptGame/`
+
 ## Controls
 
 - **Move:** `WASD` or Arrow Keys
