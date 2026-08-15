@@ -5,58 +5,105 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>JavaScript Game World</title>
   <style>
+    :root {
+      color-scheme: dark;
+      font-family: Arial, sans-serif;
+    }
+
     body {
       margin: 0;
-      background: #111;
-      color: #eee;
-      font-family: Arial, sans-serif;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #111827;
+      color: #e5e7eb;
+    }
+
+    .game-shell {
+      width: min(960px, calc(100vw - 32px));
+      padding: 20px;
+      box-sizing: border-box;
+    }
+
+    .game-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+      align-items: center;
+    }
+
+    .game-header h1,
+    .game-header p {
+      margin: 0;
+    }
+
+    .hud {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      font-size: 0.95rem;
+    }
+
+    .panel {
+      padding: 12px 14px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid #334155;
+      border-radius: 10px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.24);
     }
 
     canvas {
       display: block;
-      margin: 24px auto;
-      border: 1px solid #444;
-      background: #1e1e1e;
+      width: 100%;
+      max-width: 900px;
+      aspect-ratio: 3 / 2;
+      border: 1px solid #475569;
+      border-radius: 12px;
+      background: #0f172a;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
+    }
+
+    .footer {
+      margin-top: 12px;
+      font-size: 0.92rem;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
+
+    .footer strong {
+      color: #f8fafc;
     }
   </style>
 </head>
 <body>
-  <canvas id="gameCanvas" width="800" height="450"></canvas>
+  <main class="game-shell">
+    <section class="game-header">
+      <div>
+        <h1>JavaScript Game World</h1>
+        <p>Collect energy cores, power the exit, and escape the arena.</p>
+      </div>
+      <div class="hud panel" aria-live="polite">
+        <span id="coreCount">Cores: 0 / 0</span>
+        <span id="doorStatus">Exit: Offline</span>
+      </div>
+    </section>
 
-  <script>
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
+    <canvas
+      id="gameCanvas"
+      width="900"
+      height="600"
+      aria-label="Top-down game canvas"
+    ></canvas>
 
-    const player = { x: 50, y: 200, width: 40, height: 40, speed: 120 };
-    let lastTimestamp = 0;
+    <section class="footer panel">
+      <div><strong>Move:</strong> WASD or Arrow Keys</div>
+      <div><strong>Interact:</strong> E or Space near switches and the exit door</div>
+      <div id="messageLine">Restore power by collecting every core.</div>
+    </section>
+  </main>
 
-    function update(deltaTime) {
-      player.x += player.speed * deltaTime;
-      if (player.x > canvas.width) {
-        player.x = -player.width;
-      }
-    }
-
-    function render() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      ctx.fillStyle = "#2e7d32";
-      ctx.fillRect(0, canvas.height - 60, canvas.width, 60);
-
-      ctx.fillStyle = "#64b5f6";
-      ctx.fillRect(player.x, player.y, player.width, player.height);
-    }
-
-    function gameLoop(timestamp) {
-      const deltaTime = (timestamp - lastTimestamp) / 1000 || 0;
-      lastTimestamp = timestamp;
-
-      update(deltaTime);
-      render();
-      requestAnimationFrame(gameLoop);
-    }
-
-    requestAnimationFrame(gameLoop);
-  </script>
+  <script type="module" src="./src/main.js"></script>
 </body>
 </html>
