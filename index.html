@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JavaScript Game World</title>
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      color: #eee;
+      font-family: Arial, sans-serif;
+    }
+
+    canvas {
+      display: block;
+      margin: 24px auto;
+      border: 1px solid #444;
+      background: #1e1e1e;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="800" height="450"></canvas>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const player = { x: 50, y: 200, width: 40, height: 40, speed: 120 };
+    let lastTimestamp = 0;
+
+    function update(deltaTime) {
+      player.x += player.speed * deltaTime;
+      if (player.x > canvas.width) {
+        player.x = -player.width;
+      }
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = "#2e7d32";
+      ctx.fillRect(0, canvas.height - 60, canvas.width, 60);
+
+      ctx.fillStyle = "#64b5f6";
+      ctx.fillRect(player.x, player.y, player.width, player.height);
+    }
+
+    function gameLoop(timestamp) {
+      const deltaTime = (timestamp - lastTimestamp) / 1000 || 0;
+      lastTimestamp = timestamp;
+
+      update(deltaTime);
+      render();
+      requestAnimationFrame(gameLoop);
+    }
+
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>
