@@ -16,7 +16,8 @@ Everything is plain ES modules with no build step and no runtime dependencies.
 npm run serve         # python3 -m http.server 8000
 ```
 
-Then open <http://localhost:8000/simulation.html> or <http://localhost:8000/index.html>.
+Then open <http://localhost:8000/> for the squad simulation, or
+<http://localhost:8000/arena.html> for the arena prototype.
 
 ## Test and record
 
