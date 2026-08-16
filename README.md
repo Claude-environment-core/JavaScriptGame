@@ -1,5 +1,7 @@
 # JavaScriptGame
 
+[https://github.com/Claude-environment-core/JavaScriptGame](https://github.com/Claude-environment-core/JavaScriptGame)
+
 Two vanilla-JavaScript browser prototypes:
 
 - **`simulation.html`** — a port of the **Simple3DPlayground** squad simulation: deterministic world
