@@ -1,6 +1,6 @@
 # JavaScriptGame
 
-[https://github.com/Claude-environment-core/JavaScriptGame](https://github.com/Claude-environment-core/JavaScriptGame)
+[https://claude-environment-core.github.io/JavaScriptGame/](https://claude-environment-core.github.io/JavaScriptGame/)
 
 Two vanilla-JavaScript browser prototypes:
 
