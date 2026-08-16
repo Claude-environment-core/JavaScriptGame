@@ -1,12 +1,14 @@
 # JavaScriptGame
 
+[https://claude-environment-core.github.io/JavaScriptGame/](https://claude-environment-core.github.io/JavaScriptGame/)
+
 Two vanilla-JavaScript browser prototypes:
 
-- **`simulation.html`** — a squad simulation: deterministic world generation, A\* routing, and a
+- **`index.html`** — a squad simulation: deterministic world generation, A\* routing, and a
   formation that squeezes and spreads to fit the space it is moving through.
-- **`index.html`** — a top-down arena prototype (collect cores, power the exit, escape).
+- **`arena.html`** — a top-down arena prototype (collect cores, power the exit, escape).
 
-Plain ES modules, no build step, no runtime dependencies.
+Everything is plain ES modules with no build step and no runtime dependencies.
 
 ## Run locally
 
@@ -65,7 +67,7 @@ The short version:
 | `src/sim/squad.js` | Squad plan, route planning, controller factory |
 | `src/sim/formation/` | The deformable virtual structure — see the design doc |
 | `src/sim/snapshot.js` | Run recording and metrics |
-| `src/sim-demo/main.js` | Canvas front end for `simulation.html` |
+| `src/sim-demo/main.js` | Canvas front end for `index.html` |
 
 ## Known limits
 
@@ -75,8 +77,3 @@ The short version:
   other; personal space keeps them from overlapping and both slow down.
 - **Formation size is not chosen for you.** A file of five spans six tiles, so in a world of short
   corridors a large squad spends most of its time in single file.
-
-## Arena prototype
-
-Move with `WASD` or the arrow keys, interact with `E` or `Space`, collect every energy core,
-activate the switch console, then open and reach the exit.

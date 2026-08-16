@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JavaScript Game World</title>
+  <title>Squad Simulation</title>
   <style>
     :root {
       color-scheme: dark;
@@ -19,31 +19,20 @@
       color: #e5e7eb;
     }
 
-    .game-shell {
+    .shell {
       width: min(960px, calc(100vw - 32px));
       padding: 20px;
       box-sizing: border-box;
     }
 
-    .game-header {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 12px;
-      align-items: center;
-    }
-
-    .game-header h1,
-    .game-header p {
+    header h1,
+    header p {
       margin: 0;
     }
 
-    .hud {
-      display: flex;
-      gap: 16px;
-      flex-wrap: wrap;
-      font-size: 0.95rem;
+    header p {
+      color: #cbd5e1;
+      margin-top: 4px;
     }
 
     .panel {
@@ -54,11 +43,48 @@
       box-shadow: 0 10px 25px rgba(0, 0, 0, 0.24);
     }
 
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin: 12px 0;
+      font-size: 0.95rem;
+    }
+
+    .controls label {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    button,
+    select,
+    input {
+      font: inherit;
+      color: #e5e7eb;
+      background: #1e293b;
+      border: 1px solid #475569;
+      border-radius: 8px;
+      padding: 6px 10px;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #334155;
+    }
+
+    input[type="number"] {
+      width: 5.5rem;
+    }
+
     canvas {
       display: block;
       width: 100%;
-      max-width: 900px;
-      aspect-ratio: 3 / 2;
+      aspect-ratio: 1 / 1;
       border: 1px solid #475569;
       border-radius: 12px;
       background: #0f172a;
@@ -69,41 +95,67 @@
       margin-top: 12px;
       font-size: 0.92rem;
       color: #cbd5e1;
-      line-height: 1.5;
+      line-height: 1.6;
     }
 
-    .footer strong {
-      color: #f8fafc;
+    .swatch {
+      display: inline-block;
+      width: 0.75rem;
+      height: 0.75rem;
+      border-radius: 3px;
+      margin-right: 6px;
+      vertical-align: -1px;
+    }
+
+    #status {
+      font-variant-numeric: tabular-nums;
     }
   </style>
 </head>
 <body>
-  <main class="game-shell">
-    <section class="game-header">
-      <div>
-        <h1>JavaScript Game World</h1>
-        <p>Collect energy cores, power the exit, and escape the arena.</p>
-      </div>
-      <div class="hud panel" aria-live="polite">
-        <span id="coreCount">Cores: 0 / 0</span>
-        <span id="doorStatus">Exit: Offline</span>
-      </div>
+  <main class="shell">
+    <header>
+      <h1>Squad Simulation</h1>
+      <p>A formation that squeezes and spreads to fit the space it is moving through.</p>
+    </header>
+
+    <section class="controls panel">
+      <label>
+        Formation
+        <select id="formation"></select>
+      </label>
+      <label>
+        Speed
+        <select id="speed">
+          <option value="1">1x</option>
+          <option value="2">2x</option>
+          <option value="4" selected>4x</option>
+          <option value="8">8x</option>
+        </select>
+      </label>
+      <label>
+        Seed
+        <input id="seed" type="number" value="0" step="1">
+      </label>
+      <button id="regenerate" type="button">Regenerate world</button>
+      <button id="reroute" type="button">New objective</button>
+      <button id="pause" type="button">Pause</button>
     </section>
 
-    <canvas
-      id="gameCanvas"
-      width="900"
-      height="600"
-      aria-label="Top-down game canvas"
-    ></canvas>
+    <canvas id="simCanvas" width="768" height="768" aria-label="Squad simulation canvas"></canvas>
 
     <section class="footer panel">
-      <div><strong>Move:</strong> WASD or Arrow Keys</div>
-      <div><strong>Interact:</strong> E or Space near switches and the exit door</div>
-      <div id="messageLine">Restore power by collecting every core.</div>
+      <div id="status" aria-live="polite">Loading…</div>
+      <div id="legend">
+        <span><span class="swatch" style="background:#4ade80"></span>agents (drawn at body size)</span>
+        <span><span class="swatch" style="background:#fb923c"></span>regrouping</span>
+        <span><span class="swatch" style="background:#facc15"></span>anchor, spine and slots</span>
+        <span><span class="swatch" style="background:#38bdf8"></span>route</span>
+        <span><span class="swatch" style="background:#f472b6"></span>objective</span>
+      </div>
     </section>
   </main>
 
-  <script type="module" src="./src/main.js"></script>
+  <script type="module" src="./src/sim-demo/main.js"></script>
 </body>
 </html>
