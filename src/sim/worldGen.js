@@ -48,8 +48,8 @@ class Partition {
  *  4. Corridors are carved by walking the partition tree, clearing the cells
  *     they traverse.
  *
- * Random call order and traversal order are parity critical: the same seed must
- * always produce the same map.
+ * Random call order and traversal order are load-bearing: the same seed must
+ * always produce the same map, so a run can be reproduced from its seed alone.
  */
 export function generateWorld({
   width = 64,

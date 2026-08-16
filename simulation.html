@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Squad Simulation — Simple3DPlayground Port</title>
+  <title>Squad Simulation</title>
   <style>
     :root {
       color-scheme: dark;
@@ -116,7 +116,7 @@
   <main class="shell">
     <header>
       <h1>Squad Simulation</h1>
-      <p>A* routing, waypoint progression and flock steering on a generated tile map.</p>
+      <p>A formation that squeezes and spreads to fit the space it is moving through.</p>
     </header>
 
     <section class="controls panel">
@@ -147,9 +147,10 @@
     <section class="footer panel">
       <div id="status" aria-live="polite">Loading…</div>
       <div id="legend">
-        <span><span class="swatch" style="background:#4ade80"></span>agents</span>
-        <span><span class="swatch" style="background:#facc15"></span>formation anchor and slots</span>
-        <span><span class="swatch" style="background:#38bdf8"></span>path and active waypoint</span>
+        <span><span class="swatch" style="background:#4ade80"></span>agents (drawn at body size)</span>
+        <span><span class="swatch" style="background:#fb923c"></span>regrouping</span>
+        <span><span class="swatch" style="background:#facc15"></span>anchor, spine and slots</span>
+        <span><span class="swatch" style="background:#38bdf8"></span>route</span>
         <span><span class="swatch" style="background:#f472b6"></span>objective</span>
       </div>
     </section>

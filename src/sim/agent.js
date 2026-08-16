@@ -22,6 +22,13 @@ export const AgentState = Object.freeze({
 export const DEFAULT_AGENT_HEALTH = 100;
 
 /**
+ * Agents occupy space. Body radius is the constant the rest of the simulation is
+ * derived from: personal space, wall clearance, corridor margins and the limit
+ * on how tightly a formation may squeeze all follow from it.
+ */
+export const DEFAULT_BODY_RADIUS = 0.25;
+
+/**
  * Per-role health from configuration. Config values override the constructor
  * default, matching the source behaviour where loaded config wins.
  */
@@ -41,12 +48,14 @@ export class Agent {
     role = AgentRole.Rifleman,
     state = AgentState.Idle,
     healthConfig = null,
+    bodyRadius = DEFAULT_BODY_RADIUS,
   } = {}) {
     this.id = id;
     this.position = clone(position);
     this.velocity = clone(velocity);
     this.role = role;
     this.state = state;
+    this.bodyRadius = bodyRadius;
 
     // Config-driven health overrides the constructor default.
     const configuredHealth = healthConfig ? healthConfig[role] : undefined;
@@ -81,6 +90,7 @@ export function createAgents(positions, options = {}) {
         role: options.roles ? options.roles[index % options.roles.length] : AgentRole.Rifleman,
         state: AgentState.Moving,
         healthConfig: options.healthConfig ?? null,
+        bodyRadius: options.bodyRadius ?? DEFAULT_BODY_RADIUS,
       }),
   );
 }

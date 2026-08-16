@@ -1,470 +1,422 @@
 # Deformable Virtual Structure
 
-A steering pattern for agents that want to hold a formation, where the formation itself
+The steering pattern this simulation uses: agents hold a formation, and the formation itself
 squeezes and spreads to fit the space the group is moving through.
 
-This is a design document. Nothing here is implemented yet; the current simulation still uses
-the weighted-sum boid model described in `README.md`.
+This document is both the design and the record of building it — including the parts that were
+tried and thrown away, which are usually the most useful thing to write down.
 
 ---
 
-## 1. What is actually wrong
+## 1. Why the flocking model had to go
 
-The problem is not tuning. Three structural faults make the current model unable to hold a
-formation at *any* weight setting.
+The simulation used to steer agents by summing weighted behaviours: separation, cohesion,
+alignment, formation-slot attraction, obstacle avoidance. It could not hold a formation at any
+weight setting, for three structural reasons.
 
 ### Fault 1 — radius inversion
 
-`SeparationRadius` is `1.5`. `DEFAULT_FORMATION_SPACING` is `1.2`.
+Separation radius was `1.5`. Slot spacing was `1.2`.
 
-The slot lattice is *inside* the repulsion field. An agent sitting perfectly in its slot is
-still within every neighbour's separation radius, so the formation's own geometry is a
-permanent violation of the separation behaviour. The two systems have no shared equilibrium —
-one of them must lose, continuously.
+The slot lattice sat *inside* the repulsion field, so an agent standing perfectly in its slot was
+still being shoved by every neighbour. The two systems had no shared equilibrium — one of them
+had to lose, continuously. Measured on an open map with five agents in a wedge:
 
-Measured on an open map, five agents, wedge at default spacing, sampled over a march:
-
-| Quantity | Measured | Nominal |
+| Quantity | Old model | Nominal |
 | --- | --- | --- |
 | Mean distance from assigned slot | **1.46** | 0 |
 | Mean nearest-neighbour gap | **0.95** | 1.20 |
 | Mean weighted separation force | **4.55** | — |
 | Mean weighted formation-slot force | **2.98** | — |
 
-Agents sit further from their slots than the slots are from each other. There is no formation
-being held; there is a boid flock with a mild bias.
-
-Lowering the spacing makes it worse, not better — at `0.6` spacing (what the demo needs to
-avoid the arrival-gate stall) separation still wins 4.68 to 2.39.
+Agents sat further from their slots than the slots were from each other. There was no formation
+being held; there was a flock with a mild bias.
 
 ### Fault 2 — fusion by summation discards the structure of the problem
 
-`composeSteering` adds weighted behaviour vectors and truncates the result. Superposition is
-the standard critique of potential-field control: summing competing objectives gives no
-guarantee that *any* of them is satisfied, and directly opposed terms cancel to a spurious
-equilibrium — the agent stops in a doorway with two large forces in balance.
+Summing competing objectives guarantees none of them. Directly opposed terms cancel into a
+spurious equilibrium — the agent stops in a doorway with two large forces in balance. Worse, the
+summed behaviours were not the same *kind* of thing:
 
-The behaviours are also not the same kind of thing, and summing them pretends they are:
-
-- *Hold your slot* is a *preference*, and it is negotiable.
-- *Do not overlap another agent* is a *constraint*, and it is not.
+- *Hold your slot* is a preference, and it is negotiable.
+- *Do not overlap another agent* is a constraint, and it is not.
 - *Do not walk into a wall* is also a constraint.
 
 A weighted sum cannot express "never violate this, and otherwise do as much of that as
-possible". That distinction has to be in the architecture.
+possible". That distinction has to live in the architecture.
 
 ### Fault 3 — static slot binding
 
-Slot *i* belongs to agent *i*, forever. When the squad's forward direction rotates, world-space
-slots swap sides and agents cross the formation to reach them, colliding on the way. A straggler
-keeps a slot at the far side of the group and drags the whole shape toward itself.
+Slot *i* belonged to agent *i*, forever. When the squad turned, world-space slots swapped sides
+and agents crossed the formation to reach them.
 
-### Consequence
+### What it added up to
 
-The two failures already recorded in the README — formations deeper than `GroupArrivalRadius`
-stalling the waypoint gate, and stragglers being dragged through thin walls — are downstream of
-these three. A wedge of 5 at 1.2 spacing is 3.6 wide and 2.4 deep. A generated corridor is 1
-tile wide. The current model has exactly one way to fit a 3.6-wide formation through a 1-wide
-gap: destroy the formation. That is what it does.
+A wedge of five at 1.2 spacing is 3.6 wide. A corridor is one tile. The old model had exactly one
+way to fit the first through the second: destroy the formation. That is what it did — along with
+dragging stragglers through thin walls, and deadlocking whenever a formation was deeper than the
+waypoint gate's arrival radius.
 
 ---
 
 ## 2. The pattern
 
 > **The formation is a deformable virtual structure.** The group senses its environment and
-> deforms one shared shape to fit it; agents track slots in that shape; collision avoidance is
-> a constraint on tracking, never a competing preference.
+> deforms one shared shape to fit it; agents track slots in that shape; collision avoidance is a
+> constraint on tracking, never a competing preference.
 
-Five layers, each with a single responsibility, and a strict data flow between them. The
-layering is what stops behaviours from fighting: a lower layer's output is an *input* to the
-layer above, not a term to be summed with it.
+Six layers, each with one responsibility and a strict data flow. The layering is what stops
+behaviours from fighting: a lower layer's output is an *input* to the next, not a term to be
+summed with it.
 
 ```mermaid
 flowchart TD
-    A["<b>1. Shape</b><br/>nominal unit lattice + deformation affordances"] --> B
-    B["<b>2. Deformation</b><br/>environment → affine transform D<br/>(scale, shear, mode)"] --> C
-    C["<b>3. Pose &amp; progression</b><br/>anchor advance, coherence-gated speed"] --> D
-    D["<b>4. Assignment</b><br/>agents ↔ slots, with switching hysteresis"] --> E
-    E["<b>5. Tracking</b><br/>PD + slot-velocity feedforward"] --> F
-    F["<b>Constraint projection</b><br/>walls, personal space, speed limit"] --> G["integrate"]
-
-    P["<b>Environment probe</b><br/>clearance along route horizon"] --> B
-    R["<b>Agent feedback</b><br/>per-agent clearance reports"] --> B
+    P["<b>Clearance</b><br/>route horizon ahead + agent reports"] --> B
+    B["<b>Deformation</b><br/>affine scale, mode, shape degradation"] --> S
+    A["<b>Anchor</b><br/>pure pursuit, coherence-gated speed"] --> S
+    S["<b>Spine</b><br/>the path the anchor travelled"] --> L
+    L["<b>Slots</b><br/>placed in spine coordinates"] --> M
+    M["<b>Assignment</b><br/>Hungarian + switching cost"] --> T
+    T["<b>Tracking</b><br/>PD + slot-velocity feedforward<br/>(or a rejoin route, if the slot is out of sight)"] --> C
+    C["<b>Constraints</b><br/>velocity projection: walls, personal space"] --> I["integrate"]
 ```
 
-The layers map onto collaborating objects:
-
-| Role | Responsibility | Knows about |
-| --- | --- | --- |
-| `FormationShape` | Nominal local lattice for *n* agents, plus what it is allowed to do under deformation | Nothing but *n* |
-| `ClearanceProbe` | Free width along the route ahead, and per-agent clearance | The map, the route |
-| `FormationState` | The deformable virtual structure: pose, affine state `D`, mode | Shape + probe |
-| `SlotAssignment` | Which agent holds which slot | Positions + slots |
-| `SlotTracker` | One agent's desired velocity | Its slot and slot velocity |
-| `ConstraintProjector` | Nearest feasible velocity to the desired one | Walls, neighbours |
+| Module | Responsibility |
+| --- | --- |
+| `shape.js` | Nominal lattices and what each may degrade into |
+| `clearance.js` | Free width ahead, agent reports, and route centring |
+| `deformation.js` | Affine state, safety floor, rate limits, mode machine |
+| `spine.js` | The anchor's trail, and sampling positions along it |
+| `assignment.js` | Which agent holds which slot |
+| `tracking.js` | One agent's desired velocity |
+| `rejoin.js` | Routing back when the slot is behind a wall |
+| `constraints.js` | Nearest feasible velocity to the desired one |
+| `controller.js` | The tick pipeline that drives all of the above |
 
 ---
 
-## 3. Layer 1 — shape declares its own affordances
+## 3. Deformation
 
-A shape is no longer just a list of offsets. It also declares how it is allowed to deform, and
-what it degrades into when it cannot deform enough.
-
-```js
-{
-  offsets(n),            // nominal local lattice, spacing 1.0
-  halfWidth, depth,      // extents of the nominal lattice
-  minLateralScale,       // how far it may narrow
-  maxLongitudinalScale,  // how far it may stretch
-  degradesTo,            // shape to switch to when narrowing is exhausted
-}
-```
-
-| Shape | Min lateral scale | Max longitudinal scale | Degrades to |
-| --- | --- | --- | --- |
-| Wedge | 0.30 | 1.8 | Column |
-| Line | 0.25 | 1.0 | Column |
-| Spread | 0.40 | 1.6 | Column |
-| Circle | uniform scaling only | — | Column |
-| Column | 1.0 (already minimal) | 1.0 | — |
-
-This keeps per-shape knowledge in the shape, and out of the controller. Adding a shape means
-adding a row, not editing the deformation logic.
-
----
-
-## 4. Layer 2 — deformation is the whole point
-
-The formation carries an affine transform applied to the nominal lattice, in the squad's local
-frame:
+The formation carries an affine transform applied to its nominal lattice:
 
 ```
-slot_world(i) = anchor + R(forward) · D · offset(i) · spacing
-
-        ⎡ sx   k ⎤
-    D = ⎢        ⎥          sx = lateral scale, sy = longitudinal scale, k = shear
-        ⎣ 0   sy ⎦
+    slot(i) = spine(−offsetᵢ.y · sy · spacing) + across · (offsetᵢ.x · sx · spacing)
 ```
 
-Affine deformation of a nominal shape — translation, rotation, scaling, shear — is the standard
-formalism for exactly this problem (see *affine formation maneuver control*, §10). It gives a
-squeeze that is well defined for every shape at once, rather than a bespoke narrowing rule per
-formation.
-
-### Area preservation: squeezing narrows *and* lengthens
-
-The key move. When the group narrows, it must go somewhere, so it gets longer:
+### Narrowing lengthens: area preservation
 
 ```
 sy = clamp(1 / sx, 1, maxLongitudinalScale)
 ```
 
-A wedge entering a corridor narrows and stretches into a file *continuously*, and comes back out
-the far side. This is one transform, not a special case.
+A formation that narrows has to put its agents somewhere, so it gets longer. A wedge entering a
+corridor stretches toward a file *continuously* — one transform, not a special case per shape.
 
 ```
- open (sx = 1.0)          squeezing (sx = 0.5)     file (sx = 0.3, mode = FILE)
+ open (sx = 1.0)          squeezing (sx = 0.5)     file (degraded shape)
 
         ●                        ●                          ●
       ●   ●                    ●  ●                          ●
     ●       ●                 ●    ●                         ●
                               ●    ●                          ●
-   width 3.6                 width 1.8                       ●
-   depth 2.4                 depth 4.8                    width 0.5
+   3.6 wide                  1.8 wide                        ●
+   2.4 deep                  4.8 deep                     0.0 wide
 ```
 
-### Where the target scale comes from
+### The narrowing floor is derived, not declared
 
-Two sources, combined by taking the tighter of the two. This is the "the whole flock determines
-its constraints" part, and the two halves do different jobs:
+The floor is the tightest lateral scale at which no two slots come closer than personal space —
+found by searching the deformed lattice, not by a number written next to each shape:
 
-**Feedforward — the route probe (anticipation).** Sample *h* points along the route ahead of the
-anchor. At each, cast rays perpendicular to the local route tangent to get left and right
-clearance; free width `w = cL + cR`. Take the minimum over the horizon:
-
-```
-sx_route = clamp((min_w - 2·margin) / (2·halfWidth·spacing), minLateralScale, 1)
-```
-
-Because the horizon looks ahead, **the formation is already narrow when it reaches the doorway**
-instead of discovering the wall on contact. This is the single biggest behavioural difference
-from the current model.
-
-**Feedback — agent reports (reaction).** Each agent reports its own lateral clearance from the
-previous tick. The group takes the tightest report. This catches what the centreline probe
-misses: obstacles off the route, agents on the outside of a turn, anything dynamic.
-
-```
-sx_target = min(sx_route, sx_agents)
+```js
+for (let scale = 1; scale > 0; scale -= 0.01) {
+  if (minimumSlotGap(offsets, scale) < personalSpace) break;
+  floor = scale;
+}
 ```
 
-### Rate limiting, hysteresis, asymmetry
+This matters because **body radius is the primary constant**. Personal space is `2 · bodyRadius`
+plus a sliver; the floor follows from it; corridor margins and wall clearance follow from it too.
+Change the size of an agent and every limit moves consistently — no shape can declare itself into
+a lattice its agents do not physically fit in.
 
-Three details that separate a design that works from one that oscillates:
+### Where the target comes from
 
-- **Rate limit** `|dsx/dt| ≤ ρ`. Slots must move slowly enough for agents to track them; a step
-  change in `D` teleports slots and the tracking layer sees an impulse.
-- **Asymmetric rates.** Contract fast (`ρ_in ≈ 2.0 /s`), expand slowly (`ρ_out ≈ 0.6 /s`).
-  Narrowing early is cheap; widening early puts an agent into a wall.
-- **Hysteresis on mode.** Enter `FILE` at `sx < minLateralScale`, leave it only at
-  `sx > minLateralScale + Δ`. Without the deadband, a group at the threshold of a doorway
-  flickers between wedge and file every tick.
+Two readings, combined by taking the tighter:
 
-### Mode as an explicit state machine
+**Feedforward — the route probe.** Sample the anchor plus the next few waypoints; at each, cast
+rays across the route and take `min(left, right)`. Because it looks ahead, the formation is
+*already narrow when it arrives* at a doorway rather than discovering the wall on contact. This is
+the single biggest behavioural difference from the old model.
+
+**Feedback — agent reports.** Each agent in formation reports the room it has. This catches what
+a centreline probe misses, and it keeps the squad narrow while its *tail* is still in a corridor
+the head has already left.
+
+Agent reports are corrected for the agent's own lateral offset from the spine:
+
+```
+halfWidth = min(offset + right, left − offset)
+```
+
+That correction is essential, and getting it wrong cost an afternoon. Reading room straight off
+an agent's position makes the formation measure *its own width*: an agent that spreads out to the
+right sees less room to its right, the group squeezes, the agent comes back in, the reading
+widens, the group spreads — and the shape pumps between wedge and file forever. Adding the offset
+back cancels exactly that term.
+
+### Rate limits, hysteresis, asymmetry
+
+- **Rate limited**, so slots move slowly enough to be tracked rather than teleporting.
+- **Asymmetric**: contract at 2.5/s, expand at 0.7/s. Narrowing early is cheap; widening early
+  puts an agent into a wall.
+- **Smoothed demand**: clearance readings jitter as the anchor crosses tiles, so the group acts on
+  a low-passed belief about its room, not a single reading.
+- **Hysteresis on mode**, or a squad hovering at a doorway flickers between shapes every tick.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> OPEN
-    OPEN --> SQUEEZE: clearance < shape width + margin
-    SQUEEZE --> OPEN: clearance > shape width + margin + Δ
-    SQUEEZE --> FILE: sx floor reached
-    FILE --> SQUEEZE: clearance > file width + Δ
-    OPEN --> REGROUP: coherence < C_min
-    SQUEEZE --> REGROUP: coherence < C_min
-    REGROUP --> OPEN: coherence > C_min + Δ
+    [*] --> Open
+    Open --> Squeeze: less room than the shape needs
+    Squeeze --> Open: room to spare
+    Squeeze --> File: narrowing floor reached
+    File --> Squeeze: room to spare, plus hysteresis
 ```
 
-`FILE` is a *topology* change — the shape swaps to `degradesTo` — where `SQUEEZE` is a
+`File` is a *topology* change — the shape swaps to what it degrades into — where `Squeeze` is a
 *geometry* change. Keeping them distinct means the continuous controller never has to
-discontinuously reorder slots; that only happens on the mode edge, where the assignment layer
+discontinuously reorder slots; that happens only on the mode edge, where the assignment layer
 absorbs it.
 
 ---
 
-## 5. Layer 3 — progression follows the formation, not the worst agent
+## 4. The spine
 
-The current gate ("advance when the farthest agent is within `GroupArrivalRadius`") couples
-progress to the worst tracking error, which is why a formation deeper than 2.5 units deadlocks.
-
-Replace it with a continuous coherence gate. Define formation coherence:
+Slots are not placed in a rigid frame around the anchor. They are placed **along the path the
+anchor actually travelled**:
 
 ```
-C = 1 - clamp( mean_i ‖p_i - slot_i‖ / e_max , 0, 1 )      C ∈ [0, 1]
+longitudinal offset → arc length back along the trail
+lateral offset      → across the trail's tangent at that point
 ```
 
-Then the anchor advances along the route at
+On straight ground this is identical to rigid placement. In a corridor it is the difference
+between working and not working: a rigid file reaches its trailing slots *straight back along the
+heading*, which puts them inside the wall the moment the route turns — and a slot inside a wall is
+a slot no agent can hold. The squad then stalls, waiting for coherence that can never arrive.
 
-```
-v_anchor = FormationAnchorSpeed · g(C) · h(clearance)
-```
+On the spine, every slot sits in space the anchor has already proved to be free, and a file bends
+around corners the way a queue of people does.
 
-with `g` a smoothstep that reaches 0 below `C_stop` and 1 above `C_go`. The formation *slows
-down for its own stragglers* rather than dragging them with an attraction force. Waypoints are
-consumed when the anchor passes them — ordinary pure-pursuit path following.
+Two details make it safe:
 
-This deletes both the deadlock (progress no longer depends on formation extent) and the demo's
-crawl (progress is continuous, not gated on a rare coincidence).
+- Sampling further back than the recorded trail **extrapolates only as far as free space allows**,
+  so a squad that has not moved yet — spawned with its back to a wall — does not hang its slots
+  outside the map.
+- A slot whose lateral offset is blocked is **pulled in along that offset** until it is reachable,
+  rather than collapsed onto the anchor. Collapsing stacks the whole squad on one point, which no
+  personal space allows and no formation can hold.
 
 ---
 
-## 6. Layer 4 — assignment, with a switching cost
+## 5. Progression
 
-Slots are assigned each tick by minimising total squared distance:
+The old gate — "advance the waypoint when the farthest agent is within the arrival radius" —
+coupled progress to the worst tracking error, which is why any formation deeper than 2.5 units
+deadlocked. It is replaced by three pieces:
 
-```
-minimise  Σ_i ‖p_i - slot_{σ(i)}‖²   over permutations σ
-```
+**Coherence.** `C = 1 − mean(‖pᵢ − slotᵢ‖) / maxSlotError`, clamped to `[0, 1]`.
 
-For *n ≤ 16* the Hungarian algorithm is O(n³) and trivially fast; a greedy pass with 2-opt
-improvement is an acceptable fallback. The important part is not the solver, it is the
-**switching cost**: add a penalty λ to any assignment that differs from last tick's.
+**A gated anchor.** `v = anchorSpeed · (minimumGate + (1 − minimumGate) · smoothstep(C))`. The
+formation slows for its own stragglers instead of dragging them with an attraction force.
 
-```
-cost(i, s) = ‖p_i - slot_s‖² + (σ_prev(i) == s ? 0 : λ)
-```
+The `minimumGate` floor is not a detail: **the gate slows the squad, it never stops it.** A squad
+that cannot form up — boxed in, split by geometry, one agent stuck — must still creep forward,
+because moving is usually what resolves the situation. Without the floor, "wait for your
+stragglers" and "the straggler can only rejoin if the squad moves" deadlock against each other.
 
-Without λ, two agents equidistant from two slots trade places every tick and neither arrives.
-With it, reassignment happens only when it is clearly worth it — which is exactly when the
-formation reorders at a mode change, or when an agent has genuinely fallen to the back.
+**Closest-point waypoint progression.** A capture radius alone is not enough once the anchor
+steers at a look-ahead point: it cuts corners, sweeps past a waypoint outside the radius, and
+leaves it in the list forever, dragging the carrot backwards behind the squad. Advancing while the
+*next* waypoint is closer than the current one cannot be outrun.
+
+The look-ahead point itself is line-of-sight gated — the carrot stops at the last waypoint in
+clear view — which keeps corner-cutting from crossing walls.
 
 ---
 
-## 7. Layer 5 — track the slot, then project onto what is possible
+## 6. Assignment
 
-### Tracking
-
-Slots move, so tracking must anticipate them. Finite-difference the slot's world position for
-its velocity and feed it forward:
+Slots are assigned each tick by minimising total squared distance (Hungarian, O(n³), trivial at
+squad sizes), with a switching cost added to any pairing that differs from last tick's:
 
 ```
-v_desired = slot_velocity + kp · (slot_position - agent_position)
-v_desired = truncate(v_desired, MaxSpeed)
+cost(i, s) = ‖pᵢ − slots‖² + (previous(i) === s ? 0 : λ)
 ```
 
-This is one PD-style term replacing four boid behaviours, and it is critically damped by
-construction rather than by weight tuning. Slot-velocity feedforward is what removes the
-permanent lag that currently makes agents trail their slots and trigger separation.
+Without λ, two agents equidistant from two slots trade places every tick and neither arrives. With
+it, reassignment happens only when it is clearly worth it — which is exactly at a mode change, or
+when an agent has genuinely fallen to the back. In the chokepoint fixtures this took reassignments
+over a full run from **1905 to 9**.
 
-### Constraint projection, not summation
+---
 
-Constraints then *filter* the desired velocity instead of competing with it. For each active
-constraint expressed as a half-plane with outward normal `n`:
+## 7. Tracking, rejoining, and constraints
 
+**Tracking** is one term: `v = slotVelocity + gain · (slot − position)`. The feedforward matters
+more than the gain — slots move because the anchor moves and because the shape deforms, and an
+agent chasing where its slot *was* trails it permanently.
+
+**Rejoining** handles the one case tracking cannot: an agent whose slot is behind a wall. A
+straight-line pull presses it into that wall forever. Such an agent plans an A* route to its slot
+and follows it until it can see the slot again. This is the only place an individual agent plans
+for itself, and it is what makes the coherence gate safe to rely on.
+
+**Constraints** filter the result. Each is a half-plane — an outward normal and the fastest the
+agent may still approach along it — and violations are removed by projection:
+
+```js
+const approach = -dot(velocity, normal);
+if (approach > maxApproach) {
+  velocity = add(velocity, scale(normal, approach - maxApproach));
+}
 ```
-if (v · n < 0)   v ← v - (v · n) n        // remove only the violating component
-```
 
-Applied for: the nearest wall face within braking distance, and any neighbour closer than the
-hard personal-space radius `r_hard`. Iterate two or three times for multiple constraints. This
-is a cheap approximation of reciprocal velocity obstacles (ORCA), and it has the property the
-weighted sum lacks: **the agent keeps as much of its intended motion as the constraint allows,
-and loses only the component that would violate it.** A wall stops sideways drift into itself
-while leaving motion *along* the wall untouched — which is precisely the sliding behaviour a
-doorway approach needs.
+Walls permit exactly the approach that closes the remaining gap in one tick, so an agent may skim
+a wall but never enter it. Personal space is reciprocal: each agent gives up half the closing
+speed, so a pair stays symmetric without either knowing the other's intent.
 
-Note what this does to the wall-clipping caveat: penetration is no longer a matter of which
-force is bigger. A wall constraint cannot be outvoted, because it is not voting.
+The difference from a repulsion force is categorical: **a force can be outvoted by a larger force;
+a projection cannot be outvoted at all.** Wall penetration stops being a question of which weight
+is bigger. It also preserves what the constraint permits — sliding *along* a wall toward a doorway
+is untouched, which is precisely the motion a doorway approach needs.
 
 ---
 
 ## 8. The invariant that makes the layers stop fighting
 
-Choose the personal-space radius **below the tightest slot gap the deformation can produce**:
+Personal space is chosen below the tightest slot gap the deformation can produce — which is
+guaranteed by construction, since the floor is derived from personal space in the first place.
 
-```
-r_hard  <  minLateralScale · spacing
-```
-
-With wedge numbers: `0.30 · 1.2 = 0.36`, so `r_hard = 0.3` works.
-
-The consequence is the whole point of the design:
-
-> When every agent is in its slot, **every constraint is inactive**. The constraint layer is
-> silent inside a valid formation and wakes only on transient overlap.
+> When every agent is in its slot, **every constraint is inactive**. The constraint layer is silent
+> inside a valid formation and wakes only on transient overlap.
 
 Separation cannot fight the formation, because a correctly formed formation never triggers it.
-Compare with today, where separation is *always* active because the lattice sits inside its
-radius. The fix is a structural guarantee, not a weight.
-
-Two supporting invariants:
-
-- **Deformation never produces overlapping slots.** Guaranteed by clamping `sx` at
-  `minLateralScale` and `sy ≥ 1`.
-- **Slots are always reachable.** A slot with no line of sight from the anchor falls back to the
-  anchor, as it does today — worth keeping.
+Compare the old model, where separation was *always* active because the lattice sat inside its
+radius. The fix is a structural guarantee, not a weight — and it is enforced by a test that sweeps
+every shape, every body size, and every scale down to the floor.
 
 ---
 
-## 9. Where the boid behaviours go
-
-They are not deleted. They are re-homed, and one of them survives unchanged.
+## 9. Where the flocking behaviours went
 
 | Behaviour | Fate |
 | --- | --- |
-| Separation | Becomes a hard constraint at `r_hard`, active only on overlap |
-| Cohesion | Subsumed — a formation *is* cohesion, expressed as geometry instead of a force |
-| Alignment | Subsumed — agents sharing an anchor velocity are aligned by construction |
-| Formation slot | Promoted to the primary objective, with feedforward |
-| Path attraction | Moves up to the group layer: the anchor follows the path, agents follow slots |
-| Obstacle avoidance | Split: anticipation feeds the deformation layer, reaction becomes a constraint |
-| Centroid push | Deleted — it exists only to counteract clumping that no longer happens |
+| Separation | A hard constraint at personal space, active only on overlap |
+| Cohesion | Subsumed — a formation *is* cohesion, expressed as geometry rather than force |
+| Alignment | Subsumed — agents tracking slots on a shared spine are aligned by construction |
+| Formation slot | Promoted to the primary objective, with velocity feedforward |
+| Path attraction | Moved up a layer: the anchor follows the route, agents follow slots |
+| Obstacle avoidance | Split — anticipation feeds deformation, reaction became a constraint |
+| Centroid push | Deleted; it existed to counteract clumping that no longer happens |
 
-There is a pleasing unification here worth stating explicitly: **a free flock is the same
-controller with an unpinned lattice.** Set the formation weight to zero and let slots be defined
-by neighbours rather than by a shape, and you have Reynolds' boids back. Formation and flock are
-two ends of one axis, not two systems fighting over one integrator.
+A free flock is the same controller with an unpinned lattice: formation and flock are two ends of
+one axis, not two systems fighting over one integrator.
 
 ---
 
-## 10. Prior art
+## 10. Things that were tried and rejected
 
-The pattern is an assembly of well-established pieces; each one has a literature worth reading
-before implementing that layer.
+Recorded because each looked obviously right and was not.
 
-- **Reynolds (1987), *Flocks, Herds, and Schools*** — the separation/alignment/cohesion triple
-  the current code implements. Reynolds (1999), *Steering Behaviors for Autonomous Characters*,
-  adds arrival and path following.
+**Hard wall collision on the old model.** Clamping positions out of blocked tiles stopped the
+clipping and converted it into agents stuck against walls — every fixture failed instead of
+passing. Collision response without per-agent routing just relocates the failure.
+
+**Breadcrumb targets.** Letting a cut-off agent steer at the last waypoint it could see was
+cheaper than routing, and it thrashed: the breadcrumb goes stale, the agent oscillates between it
+and the live target. Rejoin routes replaced it.
+
+**Anchor recentring.** Sliding the anchor toward the middle of the free span, live, each tick.
+The anchor drifts sideways, which changes the heading, which changes the lateral axis, which
+changes the drift — a limit cycle that flipped the squad's heading backwards at doorways.
+Centring the *route*, once, at plan time, achieves the same thing without a feedback loop.
+
+**Centring the whole route.** Centring every waypoint, including in open rooms, made routes wander
+around large spaces and cost fixture A its arrival entirely. Centring now applies only where the
+span is genuinely tight — open ground has no centre worth finding.
+
+**Absolute agent clearance.** Described in §3: the formation measures its own width and pumps.
+
+---
+
+## 11. Prior art
+
+- **Reynolds (1987), *Flocks, Herds, and Schools*** — the separation/alignment/cohesion triple this
+  pattern retires. Reynolds (1999), *Steering Behaviors for Autonomous Characters*, adds arrival
+  and path following.
 - **Lewis & Tan (1997), *High Precision Formation Control of Mobile Robots Using Virtual
-  Structures*** — the virtual structure idea: treat the formation as one rigid body, derive slot
-  positions from its pose. This design is that, made deformable.
+  Structures*** — treat the formation as one body and derive slots from its pose. This is that,
+  made deformable.
 - **Balch & Arkin (1998), *Behavior-Based Formation Control for Multirobot Teams*** — the
-  behaviour-fusion formulation of formations, and a good account of where weighted fusion runs
-  out of road.
+  behaviour-fusion formulation, and a good account of where weighted fusion runs out of road.
 - **Zhao (2018), *Affine Formation Maneuver Control of Multi-Agent Systems*** — formations that
-  translate, rotate, scale and shear a nominal configuration. The formal basis for §4.
-- **Olfati-Saber (2006), *Flocking for Multi-Agent Dynamic Systems*** — α/β/γ agents, where
-  obstacles are handled by projecting virtual β-agents onto obstacle surfaces. A cleaner
-  alternative to a ray cone if the constraint layer needs strengthening.
+  translate, rotate, scale and shear a nominal configuration; the formal basis for §3.
+- **Kamphuis & Overmars (2004), *Finding Paths for Coherent Groups Using Clearance*** — the closest
+  match to this problem: groups on a backbone path, squeezing to fit available clearance.
+- **Olfati-Saber (2006), *Flocking for Multi-Agent Dynamic Systems*** — α/β/γ agents, obstacles
+  handled by projecting virtual agents onto their surfaces.
 - **van den Berg et al. (2011), *Reciprocal n-Body Collision Avoidance* (ORCA)** — velocity-space
-  half-plane constraints; §7's projection is a simplified form.
-- **Kamphuis & Overmars (2004), *Finding Paths for Coherent Groups Using Clearance*** — the most
-  directly relevant: groups moving along a backbone path, squeezing to fit available clearance.
-  Worth reading first.
-- **Quinlan & Khatib (1993), *Elastic Bands*** — deformable paths under obstacle pressure; the
-  same elasticity metaphor applied to the route rather than the formation.
-- **Khatib (1986)** on potential fields, for the canonical statement of the local-minima and
-  force-cancellation problems that §1 Fault 2 describes.
+  half-plane constraints; §7's projection is a simplified form, including the reciprocal split.
+- **Quinlan & Khatib (1993), *Elastic Bands*** — deformable paths under obstacle pressure.
+- **Khatib (1986)** — the canonical statement of the local-minima and force-cancellation problems
+  behind §1's second fault.
 
-Considered and not chosen: **continuum crowds** (Treuille et al., 2006) replaces per-agent
-steering with flow fields. Excellent for hundreds of agents, wrong shape for squads of five that
-must hold a named geometry.
+Considered and not chosen: **continuum crowds** (Treuille et al., 2006) replaces per-agent steering
+with flow fields — excellent for hundreds of agents, wrong shape for squads of five that must hold
+a named geometry.
 
 ---
 
-## 11. How it lands in this repo
+## 12. Measured results
 
-New modules, all additive:
+Five agents, default parameters, `dt = 0.1`. "Wall entries" counts agent-ticks spent inside a
+blocked tile.
+
+| Fixture | Ticks | Mean slot error | Closest approach | Wall entries | Reassignments |
+| --- | --- | --- | --- | --- | --- |
+| A — single chokepoint | 84 | 0.37 | 0.53 | 0 | 9 |
+| B — two chokepoints | 77 | 0.31 | 0.55 | 0 | 6 |
+| C — 1-tile corridor | 153 | 0.41 | 0.70 | 0 | 5 |
+| C — 3-tile corridor | 154 | 0.45 | 0.55 | 0 | 7 |
+| D — widening corridor | 201 | 0.44 | 0.69 | 0 | 6 |
+| E — L-shaped corner | 168 | 0.48 | 0.58 | 0 | 5 |
+
+Against the old model on the chokepoint fixtures: mean slot error **1.46 → ~0.35**, wall entries
+**59 and 157 → 0**, reassignments over a run **1905 → 9**. Bodies never overlap in any fixture
+(closest approach stays above `2 · bodyRadius = 0.5`).
+
+Fixture D is the clearest picture of the pattern working. As the corridor steps 1 → 3 → 5 tiles:
 
 ```
-src/sim/formation/
-  shape.js          FormationShape definitions + affordances (replaces formations.js internals)
-  clearance.js      ClearanceProbe: route horizon sampling, per-agent clearance
-  deformation.js    Affine state, rate limiting, hysteresis, mode machine
-  assignment.js     Hungarian + switching cost
-  tracking.js       Slot tracker (PD + feedforward)
-  constraints.js    Velocity projection against walls and personal space
-  controller.js     DeformableFormationController — the tick pipeline
+segment    mode        formation width
+1 tile     File        0.0
+3 tiles    Squeeze     2.3
+5 tiles    Open        3.6
 ```
 
-`squad.js` keeps its current `SquadController` untouched. The new controller is selected
-explicitly:
-
-```js
-createSquadController({ agents, map, goal, model: "dvs" })   // default stays "spec"
-```
-
-**This matters for the work already delivered.** The existing controller is a parity port of a
-published specification, and fixtures A/B/C are its contract. The new model is a different
-control law and will not reproduce those trajectories — nor should it. Both stay, tested
-separately: `spec` keeps proving parity, `dvs` gets its own fixtures.
+Monotonic, stable, and no pumping between shapes.
 
 ---
 
-## 12. How we will know it works
+## 13. Open questions
 
-New fixtures, in the style of the existing ones:
-
-- **Fixture D — corridor squeeze.** 24×12 map, a 1-tile corridor between two open rooms. Assert:
-  the formation reaches `FILE` before entering, every agent passes, `sx` returns above 0.9 within
-  2 s of exiting, and no agent ever enters a blocked tile.
-- **Fixture E — widening.** A corridor that steps 1 → 2 → 4 tiles. Assert `sx` is monotonic
-  non-decreasing (within the rate limit) and the shape is fully open by the end.
-- **Fixture F — assignment stability.** An open map with a 180° turn. Assert reassignments per
-  second stay below a threshold, and that the turn *does* trigger the reassignment it needs.
-
-Metrics to record in the snapshot format, so runs are comparable across models:
-
-| Metric | Target |
-| --- | --- |
-| Mean slot error (open map, steady state) | < 0.25 (today: 1.46) |
-| Minimum inter-agent distance | ≥ `r_hard` at all times |
-| Blocked-tile entries | 0 (today: 59 in fixture A) |
-| Assignment changes per second | < 0.5 in steady state |
-| Time to goal, fixture A geometry | ≤ current 189 ticks |
-| Formation coherence at goal | > 0.9 |
-
-The first and third rows are the ones that decide whether this was worth doing.
-
----
-
-## 13. Decisions I would like your call on
-
-1. **Scope.** Full pattern, or a first slice? The slice I would pick: layers 1, 2 and 5
-   (shape affordances, deformation, tracking + constraints) with static assignment, which fixes
-   the corridor problem and the wall clipping. Assignment and coherence gating land second.
-2. **Should `spec` remain the default?** I have assumed yes — the parity port is a deliverable in
-   its own right — but if the simulation's purpose is now the behaviour rather than the parity,
-   `dvs` should be the default and the parity model becomes the opt-in.
-3. **Personal space vs. slot spacing.** `r_hard = 0.3` follows from the wedge's 0.30 floor. If
-   agents should read as having physical size (they are currently points), that number wants to
-   come from a body radius instead, and the deformation floors follow from *it*.
+1. **Squad size versus corridor length.** A file of five spans six tiles. In a map whose corridors
+   are shorter than that, the squad is nearly always in file. That is correct behaviour, but it
+   suggests formation size should be chosen against the world's typical corridor length.
+2. **Shear is unused.** The affine state carries scale only. Shear would let a formation lean into
+   a turn rather than bending along the spine; the spine may already be the better answer, but it
+   is untested.
+3. **One squad.** Nothing here handles two formations meeting head-on in a corridor. Personal
+   space keeps them from overlapping, but neither will give way, and the coherence gate will slow
+   both. Squad-versus-squad yielding is a layer this design does not have.

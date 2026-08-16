@@ -1,47 +1,73 @@
 /**
- * Fixtures A and B: chokepoint traversal end to end.
+ * End-to-end behaviour: squads crossing chokepoints, corridors and corners.
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createAgents } from "../src/sim/agent.js";
+import { DEFAULT_BODY_RADIUS, createAgents } from "../src/sim/agent.js";
+import { FormationMode } from "../src/sim/formation/deformation.js";
+import { personalSpace } from "../src/sim/formation/params.js";
+import { FormationType } from "../src/sim/formation/shape.js";
 import { findPath } from "../src/sim/pathfinding.js";
-import { FormationType } from "../src/sim/formations.js";
-import {
-  DEFAULT_TICK_BEHAVIOR_ORDER,
-  SquadPlan,
-  SquadState,
-  createSquadController,
-} from "../src/sim/squad.js";
-import { DEFAULT_STEERING_PARAMS } from "../src/sim/steering.js";
+import { runAndRecord } from "../src/sim/snapshot.js";
+import { SquadPlan, SquadState, createSquadController } from "../src/sim/squad.js";
 import { distance } from "../src/sim/vec2.js";
-import { buildFixtureA, buildFixtureB, buildOpenMap } from "./fixtures.js";
+import {
+  buildArena,
+  buildFixtureA,
+  buildFixtureB,
+  buildFixtureC,
+  buildFixtureD,
+  buildFixtureE,
+  buildOpenMap,
+} from "./fixtures.js";
 
-function runFixture(fixture) {
+function march(fixture, options = {}) {
   const agents = createAgents(fixture.startPositions);
   const controller = createSquadController({
     agents,
     map: fixture.map,
     goal: fixture.goal,
+    ...options,
   });
 
   assert.ok(controller, "expected a route to exist");
 
-  let ticks = 0;
-  for (let i = 0; i < fixture.maxTicks; i += 1) {
-    controller.tick(fixture.dt);
-    ticks = i + 1;
+  const result = runAndRecord(controller, {
+    dt: fixture.dt,
+    maxTicks: fixture.maxTicks,
+    everyNthTick: fixture.maxTicks,
+  });
 
-    if (controller.hasArrived(fixture.arrivalRadius)) {
-      break;
-    }
-  }
-
-  return { agents, controller, ticks };
+  return { agents, controller, ...result };
 }
 
-test("fixture A: five agents funnel through a single chokepoint", () => {
+/** Checks that hold for every run, whatever the map. */
+function assertSquadInvariants(fixture, { agents, controller, metrics }) {
+  assert.equal(metrics.blockedTileEntries, 0, "no agent ever entered a wall");
+  assert.ok(
+    metrics.minimumAgentGap >= 2 * DEFAULT_BODY_RADIUS,
+    `agent bodies overlapped: closest approach ${metrics.minimumAgentGap}`,
+  );
+
+  for (const agent of agents) {
+    assert.ok(
+      fixture.map.isWalkableWorld(agent.position),
+      `agent ${agent.id} finished inside a wall`,
+    );
+  }
+
+  // Arriving in formation means arriving spread over the formation's extent,
+  // not stacked on the objective.
+  const reach = controller.formationExtent() + fixture.arrivalRadius;
+  assert.ok(
+    controller.farthestAgentDistance(fixture.goal) <= reach,
+    `squad is strung out: farthest agent ${controller.farthestAgentDistance(fixture.goal).toFixed(2)} > ${reach.toFixed(2)}`,
+  );
+}
+
+test("fixture A: a squad files through a single chokepoint", () => {
   const fixture = buildFixtureA();
   const path = findPath(fixture.map, { x: 1, y: 1 }, { x: 10, y: 10 });
 
@@ -51,25 +77,16 @@ test("fixture A: five agents funnel through a single chokepoint", () => {
     "the path traverses the opening",
   );
 
-  for (const cell of path) {
-    assert.ok(fixture.map.isWalkable(cell.x, cell.y), "every waypoint is walkable");
-  }
-
-  const { agents, ticks } = runFixture(fixture);
-  assert.ok(ticks < fixture.maxTicks, `expected arrival within ${fixture.maxTicks} ticks`);
-
-  for (const agent of agents) {
-    const gap = distance(agent.position, fixture.goal);
-    assert.ok(gap <= fixture.arrivalRadius, `agent ${agent.id} is ${gap.toFixed(2)} from the goal`);
-  }
+  const run = march(fixture);
+  assert.ok(run.arrived, `did not arrive in ${fixture.maxTicks} ticks`);
+  assertSquadInvariants(fixture, run);
 });
 
-test("fixture B: five agents cross two sequential chokepoints", () => {
+test("fixture B: a squad crosses two sequential chokepoints", () => {
   const fixture = buildFixtureB();
   const path = findPath(fixture.map, { x: 1, y: 3 }, { x: 11, y: 12 });
 
-  assert.ok(path, "a path exists");
-
+  assert.ok(path);
   for (const doorway of fixture.doorways) {
     assert.ok(
       path.some((cell) => cell.x === doorway.x && cell.y === doorway.y),
@@ -77,35 +94,217 @@ test("fixture B: five agents cross two sequential chokepoints", () => {
     );
   }
 
-  for (const cell of path) {
-    assert.ok(fixture.map.isWalkable(cell.x, cell.y), "every waypoint is walkable");
+  const run = march(fixture);
+  assert.ok(run.arrived, `did not arrive in ${fixture.maxTicks} ticks`);
+  assertSquadInvariants(fixture, run);
+});
+
+test("fixture C: a one-tile corridor forces the wedge into a file", () => {
+  const fixture = buildFixtureC({ corridorWidth: 1 });
+  const run = march(fixture);
+
+  assert.ok(run.arrived);
+  assertSquadInvariants(fixture, run);
+  assert.ok(run.metrics.fileTicks > 0, "the formation degraded to a file to fit");
+  assert.equal(run.controller.deformation.baseType, FormationType.Wedge, "and kept its orders");
+});
+
+test("fixture C: a three-tile corridor is squeezed into, not degraded", () => {
+  const fixture = buildFixtureC({ corridorWidth: 3 });
+  const agents = createAgents(fixture.startPositions);
+  const controller = createSquadController({ agents, map: fixture.map, goal: fixture.goal });
+
+  let squeezedInCorridor = false;
+
+  for (let i = 0; i < fixture.maxTicks; i += 1) {
+    controller.tick(fixture.dt);
+
+    const inCorridor =
+      controller.anchor.x > fixture.corridor.fromX + 2 &&
+      controller.anchor.x < fixture.corridor.toX - 2;
+
+    if (inCorridor && controller.mode === FormationMode.Squeeze) {
+      squeezedInCorridor = true;
+      assert.ok(controller.deformation.scaleX < 1, "narrower than nominal");
+      assert.ok(controller.deformation.scaleY > 1, "and correspondingly longer");
+    }
+
+    if (controller.hasArrived()) {
+      break;
+    }
   }
 
-  const { agents, ticks } = runFixture(fixture);
-  assert.ok(ticks < fixture.maxTicks, `expected arrival within ${fixture.maxTicks} ticks`);
+  assert.ok(squeezedInCorridor, "the wedge squeezed rather than degrading");
+});
 
-  for (const agent of agents) {
-    const gap = distance(agent.position, fixture.goal);
-    assert.ok(gap <= fixture.arrivalRadius, `agent ${agent.id} is ${gap.toFixed(2)} from the goal`);
+test("fixture D: the formation recovers width as the corridor opens", () => {
+  const fixture = buildFixtureD();
+  const agents = createAgents(fixture.startPositions);
+  const controller = createSquadController({ agents, map: fixture.map, goal: fixture.goal });
+
+  const widthBySegment = new Map();
+
+  for (let i = 0; i < fixture.maxTicks; i += 1) {
+    controller.tick(fixture.dt);
+
+    const segment = fixture.segments.findIndex(
+      (candidate) =>
+        controller.anchor.x >= candidate.fromX + 3 && controller.anchor.x <= candidate.toX - 3,
+    );
+
+    if (segment >= 0) {
+      const width = controller.deformation.halfWidth * 2;
+      widthBySegment.set(segment, Math.max(widthBySegment.get(segment) ?? 0, width));
+    }
+
+    if (controller.hasArrived()) {
+      break;
+    }
+  }
+
+  assert.equal(widthBySegment.size, 3, "the squad passed through every segment");
+  assert.ok(widthBySegment.get(0) < widthBySegment.get(1), "one tile is tighter than three");
+  assert.ok(widthBySegment.get(1) < widthBySegment.get(2), "three tiles is tighter than five");
+});
+
+test("fixture E: a formation holds together around a corner", () => {
+  const fixture = buildFixtureE();
+  const run = march(fixture);
+
+  assert.ok(run.arrived);
+  assertSquadInvariants(fixture, run);
+  assert.ok(run.metrics.meanSlotError < 1.0, `slot error ${run.metrics.meanSlotError}`);
+  assert.ok(run.metrics.finalCoherence > 0.75, `coherence ${run.metrics.finalCoherence}`);
+});
+
+test("every formation crosses an open arena and holds its shape", () => {
+  for (const formation of Object.values(FormationType)) {
+    const map = buildArena(30, 30);
+    const agents = createAgents([
+      { x: 4, y: 4 },
+      { x: 4.7, y: 4 },
+      { x: 5.4, y: 4 },
+      { x: 6.1, y: 4 },
+      { x: 6.8, y: 4 },
+    ]);
+
+    const controller = createSquadController({
+      agents,
+      map,
+      goal: { x: 25, y: 25 },
+      formation,
+    });
+
+    let arrived = false;
+    for (let i = 0; i < 1200 && !arrived; i += 1) {
+      controller.tick(0.1);
+      arrived = controller.hasArrived();
+    }
+
+    assert.ok(arrived, `${formation} squad failed to reach the objective`);
+    assert.ok(
+      controller.coherence > 0.75,
+      `${formation} squad arrived out of shape: coherence ${controller.coherence.toFixed(2)}`,
+    );
+  }
+});
+
+test("a deep formation no longer stalls the squad", () => {
+  // The old weighted-sum controller deadlocked here: a column deeper than the
+  // arrival radius could never satisfy the waypoint gate. Progression now
+  // follows the anchor, so depth is irrelevant to it.
+  const map = buildArena(40, 40);
+  const agents = createAgents(
+    Array.from({ length: 6 }, (_, i) => ({ x: 4 + i * 0.7, y: 4 })),
+  );
+
+  const controller = createSquadController({
+    agents,
+    map,
+    goal: { x: 34, y: 34 },
+    formation: FormationType.Column,
+    params: { spacing: 1.6 },
+  });
+
+  let arrived = false;
+  for (let i = 0; i < 1500 && !arrived; i += 1) {
+    controller.tick(0.1);
+    arrived = controller.hasArrived();
+  }
+
+  assert.ok(arrived, "a column six deep reached its objective");
+});
+
+test("the squad slows for stragglers instead of dragging them", () => {
+  const map = buildArena(40, 40);
+  const agents = createAgents([
+    { x: 4, y: 4 },
+    { x: 4.7, y: 4 },
+    { x: 5.4, y: 4 },
+  ]);
+
+  const controller = createSquadController({ agents, map, goal: { x: 34, y: 34 } });
+
+  for (let i = 0; i < 40; i += 1) {
+    controller.tick(0.1);
+  }
+
+  // Teleport one agent far away: coherence collapses and the anchor should crawl.
+  agents[2].position = { x: 20, y: 4 };
+  controller.tick(0.1);
+
+  const before = { ...controller.anchor };
+  controller.tick(0.1);
+  const movedWhileBroken = distance(before, controller.anchor);
+
+  assert.ok(controller.coherence < controller.params.coherenceGo);
+  assert.ok(movedWhileBroken > 0, "but never stops entirely");
+  assert.ok(
+    movedWhileBroken < controller.params.anchorSpeed * 0.1,
+    `anchor moved ${movedWhileBroken.toFixed(3)} while the squad was scattered`,
+  );
+});
+
+test("agents take the nearest slot rather than the one matching their index", () => {
+  const map = buildArena(30, 30);
+  const agents = createAgents([
+    { x: 10, y: 5 },
+    { x: 5, y: 5 },
+  ]);
+
+  const controller = createSquadController({
+    agents,
+    map,
+    goal: { x: 5, y: 25 },
+    formation: FormationType.Line,
+  });
+
+  for (let i = 0; i < 60; i += 1) {
+    controller.tick(0.1);
+  }
+
+  for (let i = 0; i < agents.length; i += 1) {
+    const own = distance(agents[i].position, controller.slotFor(i));
+    const other = distance(agents[i].position, controller.slotFor(1 - i));
+    assert.ok(own <= other + 1e-9, `agent ${i} is holding the wrong slot`);
   }
 });
 
 test("an unreachable goal yields no controller", () => {
   const fixture = buildFixtureA();
-
-  // Seal the only opening.
   fixture.map.set(fixture.opening.x, fixture.opening.y, 1);
 
-  const controller = createSquadController({
-    agents: createAgents(fixture.startPositions),
-    map: fixture.map,
-    goal: fixture.goal,
-  });
-
-  assert.equal(controller, null);
+  assert.equal(
+    createSquadController({
+      agents: createAgents(fixture.startPositions),
+      map: fixture.map,
+      goal: fixture.goal,
+    }),
+    null,
+  );
 });
 
-test("the current target is the first waypoint, then the objective", () => {
+test("the plan yields waypoints first, then the objective", () => {
   const plan = new SquadPlan({
     objective: { x: 9, y: 9 },
     waypoints: [
@@ -114,6 +313,7 @@ test("the current target is the first waypoint, then the objective", () => {
     ],
   });
 
+  assert.equal(plan.state, SquadState.Advance);
   assert.deepEqual(plan.currentTarget, { x: 1, y: 1 });
   assert.deepEqual(plan.consumeNextWaypoint(), { x: 1, y: 1 });
   assert.deepEqual(plan.currentTarget, { x: 2, y: 2 });
@@ -124,137 +324,63 @@ test("the current target is the first waypoint, then the objective", () => {
   assert.equal(plan.consumeNextWaypoint(), null);
 });
 
-test("waypoints advance only once the farthest agent is inside the arrival radius", () => {
-  const map = buildOpenMap(20, 20);
-  const agents = createAgents([
-    { x: 2, y: 2 },
-    { x: 18, y: 18 },
-  ]);
-
-  const plan = new SquadPlan({
-    objective: { x: 10, y: 10 },
-    waypoints: [
-      { x: 3, y: 3 },
-      { x: 4, y: 4 },
-    ],
-  });
-
-  const controller = createSquadController({
-    agents: [agents[0]],
-    map,
-    goal: { x: 10, y: 10 },
-  });
-  controller.plan = plan;
-  controller.agents = agents;
-
-  // The straggler is far outside GroupArrivalRadius, so nothing is consumed.
-  controller.tick(0.1);
-  assert.equal(controller.plan.waypoints.length, 2);
-  assert.ok(controller.farthestDistance > DEFAULT_STEERING_PARAMS.GroupArrivalRadius);
-
-  // Bring it in, and the waypoint is consumed on the next tick.
-  agents[1].position = { x: 3.2, y: 3.2 };
-  controller.tick(0.1);
-  assert.equal(controller.plan.waypoints.length, 1);
-});
-
-test("a held squad builds context but does not move", () => {
-  const map = buildOpenMap(20, 20);
-  const agents = createAgents([{ x: 2, y: 2 }]);
-  const controller = createSquadController({ agents, map, goal: { x: 10, y: 10 } });
-
-  controller.plan.state = SquadState.Hold;
-  controller.tick(0.1);
-
-  assert.deepEqual(agents[0].position, { x: 2, y: 2 });
-  assert.deepEqual(agents[0].velocity, { x: 0, y: 0 });
-});
-
-test("speed is clamped to MaxSpeed during integration", () => {
+test("speed stays inside the limit", () => {
   const map = buildOpenMap(40, 40);
-  const agents = createAgents([{ x: 2, y: 2 }]);
+  const agents = createAgents([{ x: 4, y: 4 }]);
   const controller = createSquadController({ agents, map, goal: { x: 35, y: 35 } });
 
-  for (let i = 0; i < 100; i += 1) {
+  for (let i = 0; i < 200; i += 1) {
     controller.tick(0.1);
-    const speed = Math.hypot(agents[0].velocity.x, agents[0].velocity.y);
-    assert.ok(speed <= DEFAULT_STEERING_PARAMS.MaxSpeed + 1e-9);
+    assert.ok(
+      Math.hypot(agents[0].velocity.x, agents[0].velocity.y) <= controller.params.maxSpeed + 1e-9,
+    );
   }
 });
 
-test("the flock context is read-only and holds one entry per agent", () => {
-  const map = buildOpenMap(20, 20);
+test("the exposed state is read-only and covers every agent", () => {
+  const map = buildArena(20, 20);
   const agents = createAgents([
-    { x: 2, y: 2 },
-    { x: 3, y: 2 },
+    { x: 4, y: 4 },
+    { x: 4.7, y: 4 },
   ]);
-  const controller = createSquadController({ agents, map, goal: { x: 10, y: 10 } });
-  const context = controller.tick(0.1);
+  const controller = createSquadController({ agents, map, goal: { x: 15, y: 15 } });
+  const state = controller.tick(0.1);
 
-  assert.equal(context.count, 2);
-  assert.equal(context.positions.length, 2);
-  assert.equal(context.velocities.length, 2);
-  assert.equal(context.slots.length, 2);
-  assert.ok(Object.isFrozen(context));
-  assert.ok(Object.isFrozen(context.positions));
+  assert.equal(state.slots.length, 2);
+  assert.equal(state.assignment.length, 2);
+  assert.equal(state.personalSpace, personalSpace(controller.params));
+  assert.ok(Object.isFrozen(state));
   assert.throws(() => {
     "use strict";
-    context.positions[0].x = 99;
+    state.slots[0].x = 99;
   });
 });
 
-test("path attraction runs first and the centroid push last", () => {
-  assert.deepEqual(DEFAULT_TICK_BEHAVIOR_ORDER, [
-    "PathAttraction",
-    "Separation",
-    "Cohesion",
-    "Alignment",
-    "FormationSlot",
-    "ObstacleAvoidance",
-    "CentroidPush",
-  ]);
-});
-
-function marchOnOpenMap({ formation, formationSpacing, maxTicks = 1000 }) {
-  const map = buildOpenMap(30, 30);
-  const agents = createAgents([
-    { x: 2, y: 2 },
-    { x: 2.3, y: 2 },
-    { x: 2.6, y: 2 },
-    { x: 2.9, y: 2 },
-    { x: 3.2, y: 2 },
-  ]);
-
-  const goal = { x: 25, y: 25 };
-  const controller = createSquadController({ agents, map, goal, formation, formationSpacing });
-
-  let arrived = false;
-  for (let i = 0; i < maxTicks && !arrived; i += 1) {
-    controller.tick(0.1);
-    arrived = controller.hasArrived(2.0);
-  }
-
-  return { controller, agents, goal, arrived };
-}
-
-test("every formation reaches the goal on an open map", () => {
-  for (const formation of Object.values(FormationType)) {
-    // Slots must fit inside GroupArrivalRadius, or waypoints never advance.
-    const { arrived } = marchOnOpenMap({ formation, formationSpacing: 0.6 });
-    assert.ok(arrived, `${formation} squad failed to reach the goal`);
-  }
-});
-
-test("a formation deeper than GroupArrivalRadius stalls waypoint progression", () => {
-  // Five agents at the default 1.2 spacing make a 4.8-long column, so its tail
-  // can never be within GroupArrivalRadius (2.5) of the squad's target and the
-  // waypoint gate never opens. This is a property of the specified gating rule,
-  // recorded here so a port can tell it apart from a regression.
-  const { arrived, controller, goal } = marchOnOpenMap({
-    formation: FormationType.Column,
-    formationSpacing: 1.2,
+test("an agent cut off from its slot routes back instead of pressing the wall", () => {
+  const fixture = buildFixtureA();
+  const agents = createAgents(fixture.startPositions);
+  const controller = createSquadController({
+    agents,
+    map: fixture.map,
+    goal: fixture.goal,
   });
 
-  assert.equal(arrived, false);
-  assert.ok(controller.farthestAgentDistance(goal) > 2.0);
+  // Walk the squad through the chokepoint, then strand one agent back on the
+  // far side of the wall, where its slot is out of sight.
+  for (let i = 0; i < 60; i += 1) {
+    controller.tick(fixture.dt);
+  }
+
+  const stranded = agents[0];
+  stranded.position = { x: 1.5, y: 1.5 };
+  stranded.velocity = { x: 0, y: 0 };
+
+  let rejoined = false;
+  for (let i = 0; i < 600 && !rejoined; i += 1) {
+    controller.tick(fixture.dt);
+    rejoined = distance(stranded.position, controller.slotFor(agents.indexOf(stranded))) < 1.0;
+  }
+
+  assert.ok(rejoined, "the stranded agent found its way back to the formation");
+  assert.ok(fixture.map.isWalkableWorld(stranded.position));
 });
