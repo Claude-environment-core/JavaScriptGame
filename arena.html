@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JavaScript Game World</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #111827;
+      color: #e5e7eb;
+    }
+
+    .game-shell {
+      width: min(960px, calc(100vw - 32px));
+      padding: 20px;
+      box-sizing: border-box;
+    }
+
+    .game-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+      align-items: center;
+    }
+
+    .game-header h1,
+    .game-header p {
+      margin: 0;
+    }
+
+    .hud {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      font-size: 0.95rem;
+    }
+
+    .panel {
+      padding: 12px 14px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid #334155;
+      border-radius: 10px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.24);
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      max-width: 900px;
+      aspect-ratio: 3 / 2;
+      border: 1px solid #475569;
+      border-radius: 12px;
+      background: #0f172a;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
+    }
+
+    .footer {
+      margin-top: 12px;
+      font-size: 0.92rem;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
+
+    .footer strong {
+      color: #f8fafc;
+    }
+  </style>
+</head>
+<body>
+  <main class="game-shell">
+    <section class="game-header">
+      <div>
+        <h1>JavaScript Game World</h1>
+        <p>Collect energy cores, power the exit, and escape the arena.</p>
+      </div>
+      <div class="hud panel" aria-live="polite">
+        <span id="coreCount">Cores: 0 / 0</span>
+        <span id="doorStatus">Exit: Offline</span>
+      </div>
+    </section>
+
+    <canvas
+      id="gameCanvas"
+      width="900"
+      height="600"
+      aria-label="Top-down game canvas"
+    ></canvas>
+
+    <section class="footer panel">
+      <div><strong>Move:</strong> WASD or Arrow Keys</div>
+      <div><strong>Interact:</strong> E or Space near switches and the exit door</div>
+      <div id="messageLine">Restore power by collecting every core.</div>
+    </section>
+  </main>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

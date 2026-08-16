@@ -10,8 +10,8 @@ export const TILE_BLOCKED = 1;
 export const CELL_SIZE = 1;
 
 /**
- * 4-neighbour expansion order. Parity critical: pathfinding tie-breaks depend
- * on the order neighbours are produced, so this array must not be reordered.
+ * 4-neighbour expansion order. Pathfinding tie-breaks depend on the order
+ * neighbours are produced, so reordering this array changes every route.
  */
 export const NEIGHBOR_OFFSETS = Object.freeze([
   Object.freeze({ x: 1, y: 0 }),

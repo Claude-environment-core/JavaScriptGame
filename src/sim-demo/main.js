@@ -1,13 +1,14 @@
 /**
- * Browser front end for the Simple3DPlayground simulation port.
+ * Browser front end for the squad simulation.
  *
  * The page is a debug view, not a game: it generates a world, routes a squad
- * across it, and draws everything the tick pipeline works with — the A* path,
- * the formation anchor, the formation slots and each agent's velocity.
+ * across it, and draws what the formation controller is working with — the
+ * route, the spine the formation hangs off, the deformed slots, and each
+ * agent's body and velocity.
  */
 
 import { createAgents } from "../sim/agent.js";
-import { FormationType } from "../sim/formations.js";
+import { FormationType } from "../sim/formation/shape.js";
 import { findPath } from "../sim/pathfinding.js";
 import { DeterministicRandom } from "../sim/rng.js";
 import { createSquadController } from "../sim/squad.js";
@@ -16,26 +17,26 @@ import { generateWorld } from "../sim/worldGen.js";
 const MAP_SIZE = 48;
 const SQUAD_SIZE = 5;
 const TICK_SECONDS = 1 / 60;
-const ARRIVAL_RADIUS = 1.5;
-
-/**
- * Slot spacing. A formation deeper than `GroupArrivalRadius` (2.5) can never
- * bring its farthest agent inside the waypoint gate, which stalls the squad, so
- * six agents need tighter spacing than the 1.2 default.
- */
-const FORMATION_SPACING = 0.6;
 
 const COLORS = {
   floor: "#0f172a",
   wall: "#334155",
   grid: "rgba(148, 163, 184, 0.12)",
-  path: "rgba(56, 189, 248, 0.55)",
+  path: "rgba(56, 189, 248, 0.45)",
   waypoint: "#38bdf8",
   goal: "#f472b6",
   anchor: "#facc15",
-  slot: "rgba(250, 204, 21, 0.35)",
+  spine: "rgba(250, 204, 21, 0.5)",
+  slot: "rgba(250, 204, 21, 0.3)",
   agent: "#4ade80",
+  agentRegrouping: "#fb923c",
   velocity: "#bbf7d0",
+};
+
+const MODE_LABEL = {
+  Open: "open",
+  Squeeze: "squeezing",
+  File: "single file",
 };
 
 const canvas = document.getElementById("simCanvas");
@@ -144,7 +145,6 @@ function route(agents) {
     map,
     goal: map.gridToWorldCenter(goalCell.x, goalCell.y),
     formation: ui.formation.value,
-    formationSpacing: FORMATION_SPACING,
   });
 }
 
@@ -185,7 +185,7 @@ function update(dt) {
   controller.tick(dt);
   state.ticks += 1;
 
-  if (controller.hasArrived(ARRIVAL_RADIUS) || state.ticks > 60 * 60) {
+  if (controller.hasArrived() || state.ticks > 60 * 90) {
     reroute();
     state.ticks = 0;
   }
@@ -258,18 +258,44 @@ function drawSquad() {
   const controller = state.controller;
   const cell = scale();
 
+  // The spine: the path the anchor travelled, which trailing slots hang off.
+  const trail = controller.trail.points;
+  if (trail.length > 1) {
+    context.strokeStyle = COLORS.spine;
+    context.lineWidth = Math.max(1, cell * 0.12);
+    context.beginPath();
+    trail.forEach((point, index) => {
+      const method = index === 0 ? "moveTo" : "lineTo";
+      context[method](point.x * cell, point.y * cell);
+    });
+    context.stroke();
+  }
+
   context.fillStyle = COLORS.slot;
   for (const slot of controller.slots) {
     context.beginPath();
-    context.arc(slot.x * cell, slot.y * cell, cell * 0.32, 0, Math.PI * 2);
+    context.arc(slot.x * cell, slot.y * cell, cell * 0.28, 0, Math.PI * 2);
     context.fill();
   }
+
+  // Each agent to its slot, so the assignment is visible.
+  context.strokeStyle = COLORS.slot;
+  context.lineWidth = 1;
+  context.beginPath();
+  controller.agents.forEach((agent, index) => {
+    const slot = controller.slotFor(index);
+    context.moveTo(agent.position.x * cell, agent.position.y * cell);
+    context.lineTo(slot.x * cell, slot.y * cell);
+  });
+  context.stroke();
 
   context.strokeStyle = COLORS.anchor;
   context.lineWidth = 2;
   context.beginPath();
-  context.arc(controller.anchor.x * cell, controller.anchor.y * cell, cell * 0.45, 0, Math.PI * 2);
+  context.arc(controller.anchor.x * cell, controller.anchor.y * cell, cell * 0.4, 0, Math.PI * 2);
   context.stroke();
+
+  const regrouping = controller.isRegrouping;
 
   for (const agent of controller.agents) {
     const x = agent.position.x * cell;
@@ -282,9 +308,11 @@ function drawSquad() {
     context.lineTo(x + agent.velocity.x * cell * 0.4, y + agent.velocity.y * cell * 0.4);
     context.stroke();
 
-    context.fillStyle = COLORS.agent;
+    // Bodies are drawn at their true radius: agents occupy space, and the
+    // formation's limits are derived from that size.
+    context.fillStyle = regrouping ? COLORS.agentRegrouping : COLORS.agent;
     context.beginPath();
-    context.arc(x, y, cell * 0.32, 0, Math.PI * 2);
+    context.arc(x, y, agent.bodyRadius * cell, 0, Math.PI * 2);
     context.fill();
   }
 }
@@ -301,11 +329,14 @@ function render() {
   drawSquad();
 
   const controller = state.controller;
+  const deformation = controller.deformation;
+
   ui.status.textContent = [
     `seed ${state.seed}`,
     `${controller.agents.length} agents`,
+    `${MODE_LABEL[deformation.mode]}, ${(deformation.halfWidth * 2).toFixed(1)} tiles wide`,
+    `coherence ${(controller.coherence * 100).toFixed(0)}%`,
     `${controller.plan.waypoints.length} waypoints left`,
-    `farthest ${controller.farthestDistance.toFixed(2)}`,
     `objectives reached ${state.reroutes}`,
     state.paused ? "paused" : "running",
   ].join(" · ");

@@ -1,9 +1,9 @@
 /**
  * Deterministic pseudo random number generator.
  *
- * World generation is parity critical, so the generator is defined here in full
- * rather than borrowed from the host runtime: given the same seed and the same
- * call order it always yields the same stream, on every JavaScript engine.
+ * World generation must be reproducible, so the generator is defined here in
+ * full rather than borrowed from the host runtime: given the same seed and the
+ * same call order it always yields the same stream, on every JavaScript engine.
  *
  * Algorithm: mulberry32 (32-bit state, single multiply-xor-shift round).
  */
