@@ -10,7 +10,7 @@ export const MIN_PARTITION_SIZE = 10;
 /** Distance a split line keeps from its partition's boundaries. */
 export const SPLIT_MARGIN = 5;
 
-export const DEFAULT_ROOM_BUDGET = 12;
+export const DEFAULT_ROOM_BUDGET = 8;
 
 /**
  * A node of the binary partition tree.
