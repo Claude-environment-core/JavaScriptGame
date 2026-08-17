@@ -68,7 +68,7 @@ The short version:
 | `src/sim/squad.js` | Squad plan, route planning, controller factory |
 | `src/sim/formation/` | The deformable virtual structure — see the design doc |
 | `src/sim/snapshot.js` | Run recording and metrics |
-| `src/sim-demo/main.js` | Canvas front end for `index.html` |
+| `src/sim/main.js` | Canvas front end for `index.html` |
 
 ## Known limits
 

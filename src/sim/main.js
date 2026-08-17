@@ -7,12 +7,12 @@
  * agent's body and velocity.
  */
 
-import { createAgents } from "../sim/agent.js";
-import { FormationType } from "../sim/formation/shape.js";
-import { findPath } from "../sim/pathfinding.js";
-import { DeterministicRandom } from "../sim/rng.js";
-import { createSquadController } from "../sim/squad.js";
-import { generateWorld } from "../sim/worldGen.js";
+import { createAgents } from "./agent.js";
+import { FormationType } from "./formation/shape.js";
+import { findPath } from "./pathfinding.js";
+import { DeterministicRandom } from "./rng.js";
+import { createSquadController } from "./squad.js";
+import { generateWorld } from "./worldGen.js";
 
 const MAP_SIZE = 48;
 const SQUAD_SIZE = 5;
