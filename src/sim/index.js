@@ -13,6 +13,7 @@ export * from "./priorityQueue.js";
 export * from "./pathfinding.js";
 export * from "./worldGen.js";
 export * from "./agent.js";
+export * from "./player.js";
 export * from "./squad.js";
 export * from "./snapshot.js";
 

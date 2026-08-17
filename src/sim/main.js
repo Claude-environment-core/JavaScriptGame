@@ -10,6 +10,7 @@
 import { createAgents } from "./agent.js";
 import { FormationType } from "./formation/shape.js";
 import { findPath } from "./pathfinding.js";
+import { KeyboardPlayerController, Player } from "./player.js";
 import { DeterministicRandom } from "./rng.js";
 import { createSquadController } from "./squad.js";
 import { generateWorld } from "./worldGen.js";
@@ -31,6 +32,7 @@ const COLORS = {
   agent: "#4ade80",
   agentRegrouping: "#fb923c",
   velocity: "#bbf7d0",
+  playerVelocity: "#7dd3fc",
 };
 
 const MODE_LABEL = {
@@ -57,6 +59,7 @@ const state = {
   seed: 0,
   world: null,
   controller: null,
+  player: null,
   random: new DeterministicRandom(0),
   paused: false,
   ticks: 0,
@@ -64,6 +67,7 @@ const state = {
   lastFrame: 0,
   accumulator: 0,
 };
+const playerController = new KeyboardPlayerController();
 
 for (const formation of Object.values(FormationType)) {
   const option = document.createElement("option");
@@ -155,6 +159,10 @@ function rebuildWorld(seed) {
 
   const cells = walkableCells(state.world.map);
   const agents = spawnSquad(state.world.map, cells[state.random.nextInt(0, cells.length)]);
+  const playerCell = cells[state.random.nextInt(0, cells.length)];
+  state.player = new Player({
+    position: state.world.map.gridToWorldCenter(playerCell.x, playerCell.y),
+  });
 
   state.controller = route(agents);
   state.ticks = 0;
@@ -183,6 +191,7 @@ function update(dt) {
   }
 
   controller.tick(dt);
+  state.player?.tick(dt, state.world.map, playerController);
   state.ticks += 1;
 
   if (controller.hasArrived() || state.ticks > 60 * 90) {
@@ -317,6 +326,29 @@ function drawSquad() {
   }
 }
 
+function drawPlayer() {
+  const player = state.player;
+  if (!player) {
+    return;
+  }
+
+  const cell = scale();
+  const x = player.position.x * cell;
+  const y = player.position.y * cell;
+
+  context.strokeStyle = COLORS.playerVelocity;
+  context.lineWidth = 2;
+  context.beginPath();
+  context.moveTo(x, y);
+  context.lineTo(x + player.velocity.x * cell * 0.4, y + player.velocity.y * cell * 0.4);
+  context.stroke();
+
+  context.fillStyle = player.color;
+  context.beginPath();
+  context.arc(x, y, player.radius * cell, 0, Math.PI * 2);
+  context.fill();
+}
+
 function render() {
   drawMap();
 
@@ -327,6 +359,7 @@ function render() {
 
   drawRoute();
   drawSquad();
+  drawPlayer();
 
   const controller = state.controller;
   const deformation = controller.deformation;

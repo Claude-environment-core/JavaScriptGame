@@ -65,6 +65,7 @@ The short version:
 | `src/sim/pathfinding.js` | A\* with a euclidean heuristic |
 | `src/sim/worldGen.js` | Deterministic binary-partition world generation |
 | `src/sim/agent.js` | Agent state, roles, body radius |
+| `src/sim/player.js` | Player entity and keyboard controller for the sim view |
 | `src/sim/squad.js` | Squad plan, route planning, controller factory |
 | `src/sim/formation/` | The deformable virtual structure — see the design doc |
 | `src/sim/snapshot.js` | Run recording and metrics |
