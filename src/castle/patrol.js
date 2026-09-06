@@ -13,6 +13,7 @@
 import { GridMap, TILE_BLOCKED, hasLineOfSight } from "../sim/gridMap.js";
 import { findPath } from "../sim/pathfinding.js";
 import { distance, normalize, scale, subtract, vec2 } from "../sim/vec2.js";
+import { nearestOpenTile } from "./layout.js";
 
 /** How close is close enough to a waypoint before moving to the next one. */
 export const WAYPOINT_RADIUS = 0.6;
@@ -472,6 +473,26 @@ export function routeTo(map, from, goal) {
  * enough movement to keep a patrol on the flagstones.
  */
 export function stepToward(entity, target, speed, dt, map) {
+  // A door barred while someone is pacing over it leaves them inside the
+  // masonry, and the clearance test below can only keep you out of a wall —
+  // it can never get you out of one, because every small step from inside is
+  // also inside. So a body that finds itself in the stonework heads for the
+  // nearest open tile instead, which is the garrison stepping aside to let the
+  // bar drop.
+  if (map && !map.isWalkableWorld(entity.position)) {
+    const escape = nearestOpenTile(map, map.worldToGrid(entity.position));
+
+    if (escape) {
+      const way = normalize(subtract(map.gridToWorldCenter(escape.x, escape.y), entity.position));
+      entity.velocity = scale(way, speed);
+      entity.position = {
+        x: entity.position.x + way.x * speed * dt,
+        y: entity.position.y + way.y * speed * dt,
+      };
+      return;
+    }
+  }
+
   const delta = subtract(target, entity.position);
   const length = Math.hypot(delta.x, delta.y);
 

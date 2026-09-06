@@ -96,6 +96,34 @@ test("a door cannot be barred on someone standing in it", () => {
   assert.ok(quiet.isOpen, "they shut it on him");
 });
 
+test("barring the doors does not wall a sentry into one", () => {
+  for (let seed = 0; seed < 6; seed += 1) {
+    const { mission, castle, garrison } = stage(seed);
+
+    // Every alarm to full at once, so any doorway a sentry happens to be
+    // pacing over is barred underneath him.
+    for (const ward of castle.wardList) {
+      garrison.alarms.set(ward.id, 1);
+    }
+    mission.tickAlertResponse();
+
+    assert.ok(
+      castle.edges.some((edge) => edge.barredByAlert),
+      `seed ${seed}: nothing was barred, so this proves nothing`,
+    );
+
+    run(mission, 30);
+
+    for (const guard of garrison.guards) {
+      const cell = castle.map.worldToGrid(guard.position);
+      assert.ok(
+        castle.map.isWalkable(cell.x, cell.y),
+        `seed ${seed}: ${guard.id} was shut inside the masonry at ${cell.x},${cell.y}`,
+      );
+    }
+  }
+});
+
 test("at full alert the keep is sealed, and can still be forced", () => {
   const { mission, castle, garrison } = stage(0, { params: { forceSeconds: 2 } });
   const keepGate = castle.edges.find(
