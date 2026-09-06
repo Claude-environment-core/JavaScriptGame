@@ -96,6 +96,7 @@ export class Ward {
     garrisonDensity = 1,
     alertSensitivity = 1,
     tileCount = 0,
+    patrolTileCount = null,
     centroid = { x: 0, y: 0 },
   }) {
     this.id = id;
@@ -106,6 +107,12 @@ export class Ward {
     this.garrisonDensity = garrisonDensity;
     this.alertSensitivity = alertSensitivity;
     this.tileCount = tileCount;
+    /**
+     * The part of the ward the garrison actually walks. For every ward inside
+     * the walls that is the whole of it; for the open ground it is the apron
+     * only, so a wider field does not conjure up more men to wander it.
+     */
+    this.patrolTileCount = patrolTileCount ?? tileCount;
     this.centroid = centroid;
     this.patrolRoutes = [];
   }
@@ -115,9 +122,9 @@ export class Ward {
     return WARD_SEQUENCE.indexOf(this.type);
   }
 
-  /** Guards this ward is meant to hold, from its density and its size. */
+  /** Guards this ward is meant to hold, from its density and the ground it walks. */
   get garrisonSize() {
-    return Math.max(1, Math.round((this.garrisonDensity * this.tileCount) / 100));
+    return Math.max(1, Math.round((this.garrisonDensity * this.patrolTileCount) / 100));
   }
 }
 

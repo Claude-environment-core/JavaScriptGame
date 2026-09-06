@@ -6,7 +6,7 @@ import { CastleTile } from "../src/castle/layout.js";
 import { MAX_ACTIVE_VECTORS, MIN_ACTIVE_VECTORS, WardId } from "../src/castle/vectors.js";
 import { JustificationTag, TraversalType, VectorType } from "../src/castle/wards.js";
 
-const SIZE = 64;
+const SIZE = 80;
 const SEEDS = 24;
 
 function build(seed = 0) {

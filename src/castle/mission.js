@@ -19,7 +19,7 @@
 import { AgentState } from "../sim/agent.js";
 import { clone, distance, vec2 } from "../sim/vec2.js";
 import { AlertState, GuardStance } from "./garrison.js";
-import { CastleTile } from "./layout.js";
+import { CastleTile, isBufferGround } from "./layout.js";
 import { stepToward } from "./patrol.js";
 import { WardId } from "./vectors.js";
 import { TraversalType, VectorType, WardType } from "./wards.js";
@@ -48,8 +48,6 @@ export const DEFAULT_MISSION_PARAMS = Object.freeze({
   keepLockAlert: 0.7,
   rescueRadius: 1.6,
   escortRadius: 6,
-  /** How far into the open ground counts as away. */
-  extractionBand: 6,
   /** Contact damage per second, per alerted guard within reach. */
   engagePressure: 9,
   engageRadius: 1.3,
@@ -381,7 +379,14 @@ export class CastleMission {
     }
   }
 
-  /** Open ground, well clear of the walls. */
+  /**
+   * Away is the buffer: past the apron, out in the country the garrison
+   * neither walks nor can see across.
+   *
+   * The same band the party formed up in, which is the point — getting out is
+   * getting back to where you started, and the run is bracketed by the one
+   * piece of ground nobody is watching.
+   */
   isAtExtraction(point) {
     const cell = this.castle.map.worldToGrid(point);
     const ward = this.castle.wardAt(cell.x, cell.y);
@@ -390,13 +395,7 @@ export class CastleMission {
       return false;
     }
 
-    const band = this.params.extractionBand;
-    return (
-      cell.x <= band ||
-      cell.y <= band ||
-      cell.x >= this.castle.map.width - 1 - band ||
-      cell.y >= this.castle.map.height - 1 - band
-    );
+    return isBufferGround(this.castle.landmarks.apron, cell.x, cell.y);
   }
 
   /**

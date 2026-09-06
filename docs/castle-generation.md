@@ -37,6 +37,7 @@ from its seed — the same contract world generation makes in the squad simulati
 | 3. Entry vectors | `vectors.js` | 3–5 candidate weak points, a subset switched on |
 | 4. Patrols | `patrol.js` | circuits per ward, beats at chokepoints |
 | 5. Garrison | `garrison.js` | guards posted to those routes, and the alert machinery |
+| 6. Muster point | `generate.js` | where the party forms up, chosen by measuring the result |
 
 `generate.js` runs them in that order and audits the result. `mission.js` sits on top: objectives,
 what the alert costs you, and what happens when you lose.
@@ -59,84 +60,140 @@ across a run of seeds:
   under the walls, to reach the next door.
 - **The keep door faces away from the inner gate**, for the same reason, one ward further in.
 - **The main gate is set in a gatehouse**, flanked by towers.
-- **Corner towers hold the approach in view**, so open ground is not free.
+- **Corner towers hold the apron in view**, so the ground under the walls is not free — and no
+  further than the apron, which is what leaves the buffer beyond it unwatched.
 - **Every ward is walkable end to end.** A building is placed only if the ward it stands in is
   still one connected piece afterwards; otherwise the placement is rolled back and retried.
 
-A generated castle at 64×64, seed 3. `#` masonry, `T` tower, `B` building, `+` gate, `p` postern,
-`k` delivery door, `w` weathered curtain, `s` drain, `P` the princess:
+### Two bands of open ground
+
+The ground outside the walls is not one undifferentiated field. It is two bands, and both are
+sized from the longest range anyone in the castle can see, rather than from the map:
 
 ```
-################################################################
-#..............................................................#
-#..............................................................#
-#..............................................................#
-#.........................BBBBB................................#
-#.........................BBBBB................................#
-#..............................................................#
-#......TTT............................................TTT......#
-#......TTT............................................TTT......#
-#......TTT#####kk#####################p###############TTT......#
-#........######kk#####################p################........#
-#........##..........................................##........#
-#........##.BBBBBBBB.................BBB.............##........#
-#........##.BBBBBBBB.................BBB.............##........#
-#........##.BBBBBBBB.................BBB.............##........#
-#........##.BBBBBBBB.................BBB.............##........#
-#........##..........................................##........#
-#........##......##############++##############......##........#
-#........##......#............................#......##........#
-#........##......#............................#......##........#
-#........##......#......BBBB..................#......##........#
-#........##......#......BBBB..................#......##........#
-#........##......#......BBBB..................#.....TTT........#
-#........##......#......BBBB..................#.....TTT........#
-#........##......#......BBBB..................#......++........#
-#........ww......#............................#......++........#
-#........ww......#.......#################....#.....TTT........#
-#........ww......#.......#...............#....#.....TTT........#
-#........##......#.......#...............#....#......##........#
-#......############......#...............#....#......##........#
-#......ssssssssssss......#...............#....#......##........#
-#......############......#...............#....#......##........#
-#........##......#.......#...............#....#......##........#
-#........##......#.......#...............#....#......##........#
-#........##......#.......#.............P.#....#......##........#
-#........##......#.......#...............#....#......##........#
-#........##......#.......#...............#....#......##........#
-#........##......#.......#####+###########....#......##........#
-#........##......#............................#......##........#
-#........##......#............................#......##........#
-#........##......#............................#......##........#
-#........##..BBBB#............................#......##........#
-#........##..BBBB#............................#......##........#
-#........##..BBBB#............................#......##........#
-#........##..BBBB#............................#......##........#
-#........##..BBBB#............................#......##........#
-#........##..BBBB##############################......##........#
-#........##..BBBB....................................##........#
-#........##.........................BBBBB............##........#
-#........##.........................BBBBB............##........#
-#........##.........................BBBBB............##........#
-#........##.........................BBBBB............##........#
-#........##..........................................##........#
-#........##############################################........#
-#......TTT############################################TTT......#
-#......TTT............................................TTT......#
-#......TTT............................................TTT......#
-#..............................................................#
-#..............................................................#
-#..............................................................#
-#..............................................................#
-#..............................................................#
-#..............................................................#
-################################################################
+map edge                                                          the castle
+   |                                                                   |
+   |<-------- buffer --------->|<-------- apron -------->|<-- curtain --
+   |        ~15 tiles          |       ~20 tiles         |
+   |                           |                         |
+   |   nobody walks it         |   patrol circuits       |
+   |   nobody can see          |   tower watch reaches   |
+   |   across it               |   this far and no more  |
+   |                           |                         |
+   @ the party musters here,   |                         |
+     ~6 tiles in               |                         |
 ```
 
-The outer gate is east, the inner gate north, the keep
-door south — three sides, no straight line. Four weak points are live on this seed: a postern and
-a delivery door in the north curtain, a weathered stretch in the west curtain, and a drain running
-under the outer bailey into the inner ward.
+The **apron** is the ground the garrison walks: swept by patrol circuits, held in view from the
+corner towers, and the reason crossing open ground is the dangerous part of an approach.
+
+The **buffer** is what lies beyond it, and it exists because a garrison's attention has an edge.
+Two rules size it, and both are about eyesight rather than about the player:
+
+- the apron is deeper than a tower can see, so tower watch cannot reach past it at all;
+- the buffer is deeper again, so even a patrol walking the apron's outer edge cannot see across it.
+
+Nothing occupies the buffer but the party. Patrol planning is masked to the apron, so no beat
+walks out into it; outbuildings are placed on the apron only; and a ward's strength is sized from
+the ground it patrols rather than from the whole ward, so a wider field does not conjure up more
+men to wander it. This is why the map has to be as big as it is — the buffer is a consequence of
+how far the garrison can see, and the castle needs room to sit inside it.
+
+Measured on the default map with nobody intruding: the share of buffer tiles that any guard could
+see, by distance in from the map edge, facing ignored.
+
+| Tiles in from the map edge | 1–5 | 6 | 8 | 10 | 12 | 13 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Any guard could see it | 0% | 2% | 6% | 10% | 12% | 14% |
+
+The outer third of the buffer is ground nobody can see into at all, and visibility only reaches
+14% at the inner edge where the buffer meets the apron. Across the whole band it is about 5%.
+
+### Where the party starts
+
+The muster point is chosen last, and by measuring the castle that was actually generated rather
+than by formula: "can anybody see this spot" is a fact about where this particular garrison ended
+up standing, and is only knowable once it is standing there.
+
+Being out of sight is tested without regard to facing. A sentry who happens to have his back
+turned when the castle is generated is not cover — he will turn round. What counts is whether he
+*could* see it: within his range, with nothing in the way. Of the spots that pass, the scoring
+prefers one well inside the buffer rather than on its boundary, comfortably clear of any beat,
+and then, among those, the one with the shortest walk to the castle — because past a point,
+further out is not safer, only slower.
+
+On the default map that lands the party six tiles into the buffer, unseen by any of the
+forty-nine guards, with the nearest of them twenty to twenty-seven tiles away.
+
+### The castle itself
+
+A generated castle at 112×112, seed 3, drawn at one character per two tiles. `#` masonry, `T`
+tower, `B` building, `+` gate, `p` postern, `k` delivery door, `w` weathered curtain, `P` the
+princess, `@` where the party musters. Dots are the apron; blank is the buffer.
+
+```
+########################################################
+#                                                      #
+#                                                      #
+#                                                      #
+#                          @                           #
+#                                                      #
+#                                                      #
+#      ..........................................      #
+#      ..........................................      #
+#      ..................................BBBBB...      #
+#      ..........................................      #
+#      ..........................................      #
+#      ..........................................      #
+#      ..........................................      #
+#      ..........................................      #
+#      ..........................................      #
+#      .........TT....................TT.........      #
+#      .........TT#########T+T########TT.........      #
+#      ..........##########T+T#########..........      #
+#      ..........##............BBBB..##..........      #
+#      ..........##BBBB........BBBB..##..........      #
+#      ..........##BBBB........BBBB..##..........      #
+#      ..........##BBBB..............##..........      #
+#      ..........##..................##..........      #
+#      ..........##.....########.....##..........      #
+#      ..........##.....#......#.....##..........      #
+#      ..........##.....D.####.+.....##..........      #
+#      ..........##.....#.#.P#.+.....##..........      #
+#      ..........##.....#.+..#.#.....##......BBB.      #
+#      ..........##.....#.####.#.....##......BBB.      #
+#      ..........##.BBB.#......#.....##......BBB.      #
+#      ..........##.BBB.########.....##..........      #
+#      ..........##.BBB..............##..........      #
+#      ..........##.BBB..............##..........      #
+#      ..........##.....BBBBB........##..........      #
+#      ..........##BB...BBBBB........##..........      #
+#      ..........##BB...BBBBB........##..........      #
+#      ..........##p###ww#k############..........      #
+#      .........TT#p###ww#k###########TT.........      #
+#      .........TT....................TT.........      #
+#      ..........................................      #
+#      ..........................................      #
+#      ..........................................      #
+#      ..........................................      #
+#      .....................................BBB..      #
+#      .....................................BBB..      #
+#      .....................................BBB..      #
+#      ..........................................      #
+#      ..........................................      #
+#                                                      #
+#                                                      #
+#                                                      #
+#                                                      #
+#                                                      #
+#                                                      #
+########################################################
+```
+
+The outer gate is south, the inner gate north, the keep door south again — no straight
+line from open ground to the objective. Four weak points are live on this seed: a postern,
+a weathered stretch and a delivery door in the south curtain, and a sergeant on a door in
+the inner one.
 
 ---
 
@@ -176,16 +233,17 @@ expensive (§6), never make it disappear.
 ### Measured: is there a way through?
 
 With nobody intruding, how often is each way in actually in somebody's view, and what is the
-longest clear window? (96×96, seed 0, 41 guards, two minutes of simulation.)
+longest clear window? (Default map, seed 0, 49 guards, two minutes of simulation.)
 
 | Way in | Watched | Longest clear window |
 | --- | --- | --- |
-| Main gate | 84% | 0.3s |
+| Main gate | 100% | 0.0s |
 | Inner gate | 100% | 0.0s |
-| Keep door | 98% | 0.2s |
-| Weathered curtain | 64% | 2.9s |
-| Delivery door | 25% | 6.3s |
-| Postern | 15% | 7.7s |
+| Keep door | 99% | 0.5s |
+| Weathered curtain | 66% | 2.9s |
+| Delivery door | 32% | 6.1s |
+| Postern | 18% | 7.6s |
+| Sergeant's door | 11% | 71.6s |
 
 That table is the level design. The gates are watched, so the front door means being seen. The
 quiet ways in have windows of several seconds that recur, which is a timing game a player can
@@ -287,6 +345,31 @@ mean roughly what it should.
 doorways constantly, so the delivery door could never be shut and the postern could never be
 barred. The rule is about the party, not about everybody.
 
+**Standing the party up outside the front gate.** The muster point started as a fixed offset from
+the outer gate — four tiles out, on the gate's own side. It reads fine on a map and is indefensible
+in play: it is inside the gatehouse sentries' cone and well inside tower range, so a run began with
+the castle already looking at you and the first thing that happened was an alarm. Worse, it made
+the opening move meaningless — there was nothing to decide, because being seen had already
+happened. Hence the buffer, the apron, and choosing the spot by measuring what the garrison can
+actually see rather than by measuring from the gate.
+
+**Approach patrols that walked to the map edge.** Interest points for a ward were taken from the
+ward's bounding box, and the open ground's bounding box is the whole map — so circuits went out to
+the corners and there was no unwatched ground anywhere outside the walls, however big the map got.
+Masking approach patrol planning to the apron is what turned the far band into a buffer; making
+the map bigger on its own did nothing at all.
+
+**Sizing the garrison from the ward.** With the map enlarged, the open ground's tile count tripled
+and the density rule dutifully produced three times as many men to wander a field. A ward's
+strength comes from the ground it actually patrols now, so a wider buffer costs the castle
+nothing and changes no other number.
+
+**Testing "can anybody see the spawn" with the vision cone.** Using the same facing-aware check
+the guards use meant a spot counted as hidden because a sentry happened to be looking the other
+way at the moment of generation — which lasts until he turns round. Two seeds in twelve put the
+party in plain view of a tower that way. Sight for this purpose is range plus line of sight, and
+facing is ignored.
+
 **Patrol routes straight from A\*.** Four-neighbour expansion turns a diagonal into a staircase, so
 guards zig-zagged across open baileys in one-tile steps. String-pulling each leg to the furthest
 cell still in line of sight — using the raycast that was already there for vision — cut a typical
@@ -320,7 +403,7 @@ redesign. It is:
 | --- | --- |
 | `Castle.wards` | `Castle.wards`, a `Map` of id to `Ward` |
 | `Ward.type` | `WardType.Approach` / `OuterBailey` / `InnerBailey` / `Keep` |
-| `Ward.garrison_density` | `Ward.garrisonDensity`, guards per 100 walkable tiles |
+| `Ward.garrison_density` | `Ward.garrisonDensity`, guards per 100 tiles of the ground it patrols |
 | `Ward.patrol_routes` | `Ward.patrolRoutes`, circuits and chokepoint beats |
 | `Edge.vector_type` | `WardEdge.vectorType` — gate, postern, kitchen, sewer, breach, bribe |
 | `Edge.is_active` | `WardEdge.isActive`, decided per seed; `isOpen` is runtime state |

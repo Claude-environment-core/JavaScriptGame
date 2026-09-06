@@ -7,7 +7,7 @@ import { AlertState, Guard, GuardStance, canSee } from "../src/castle/garrison.j
 import { WardId } from "../src/castle/vectors.js";
 import { WardType } from "../src/castle/wards.js";
 
-const SIZE = 64;
+const SIZE = 80;
 
 function build(seed = 0, garrison = {}) {
   return generateCastle({ width: SIZE, height: SIZE, seed, garrison });
@@ -204,12 +204,18 @@ test("an alarm brings a relief column from the ward behind it", () => {
     garrison.updateGuardAlert(guard);
   }
 
-  watch(garrison, point, 12);
+  // Caught while it is still marching: on a small map a column can form, arrive
+  // and disband inside the window, and there would be nothing left to inspect.
+  const intruder = { position: point, isAlive: true };
+  let squad = null;
+
+  for (let i = 0; i < 400 && !squad; i += 1) {
+    garrison.tick(0.05, [intruder]);
+    squad = garrison.squads[0] ?? null;
+  }
 
   assert.ok(garrison.reinforcementsSent > 0, "nobody came");
   assert.ok(garrison.events.some((event) => event.type === "reinforce"));
-
-  const squad = garrison.squads[0];
   assert.ok(squad, "the column is on the road");
   // Relief marches under the project's formation controller, like any squad.
   assert.ok(squad.controller.agents.length >= 1);

@@ -44,6 +44,9 @@ export const KEEP_WALL_THICKNESS = 1;
 
 export const SIDES = Object.freeze(["north", "east", "south", "west"]);
 
+/** The smallest castle worth generating, in tiles across, walls included. */
+export const MIN_CASTLE_FOOTPRINT = 40;
+
 const OPPOSITE_SIDE = Object.freeze({
   north: "south",
   south: "north",
@@ -242,7 +245,7 @@ const STRUCTURE_PLAN = Object.freeze([
  * @returns the map, the rings it was built from, the sides the gates ended up
  *   on, the structures placed, and the landmarks later stages hang off.
  */
-export function generateLayout({ width, height, random }) {
+export function generateLayout({ width, height, random, sight = 17 }) {
   const map = new GridMap(width, height, CastleTile.Floor);
   drawBorder(map);
 
@@ -250,9 +253,40 @@ export function generateLayout({ width, height, random }) {
 
   // Ring depths scale with the map, so the same generator produces a readable
   // castle at test size and at play size.
+  //
+  // The ground outside the walls is two bands, not one.
+  //
+  // The apron is the ground the garrison walks: swept by patrols, held in view
+  // from the towers, and the reason crossing it is the dangerous part of an
+  // approach. Beyond it is the buffer — open country nothing occupies but the
+  // party. Both are sized from `sight`, the longest range anyone in the castle
+  // can see, rather than from the map:
+  //
+  //   - the apron is deeper than a tower can see, so tower watch cannot reach
+  //     past it into the buffer at all;
+  //   - the buffer is deeper again, so even a patrol that walks right to the
+  //     apron's outer edge cannot see across it.
+  //
+  // Which is why the map has to be big: the buffer is a consequence of how far
+  // the garrison can see, and the castle needs room to sit inside it.
   const span = Math.min(width, height);
-  const approachDepth = Math.max(8, Math.round(span * random.nextRange(0.11, 0.16)));
+  const wanted = {
+    apron: Math.round(sight * random.nextRange(1.05, 1.25)),
+    buffer: Math.round(sight * random.nextRange(0.85, 1.0)),
+  };
+
+  // On a map too small to afford them, both bands shrink together and the
+  // castle keeps a workable footprint. The guarantee degrades; nothing breaks.
+  const affordable = Math.floor((span - MIN_CASTLE_FOOTPRINT) / 2);
+  const shrink = Math.min(1, affordable / Math.max(1, wanted.apron + wanted.buffer));
+  const apronDepth = Math.max(6, Math.round(wanted.apron * shrink));
+  const bufferDepth = Math.max(4, Math.round(wanted.buffer * shrink));
+  const approachDepth = apronDepth + bufferDepth;
   const outerRing = insetRect(bounds, approachDepth);
+
+  // Everything inside this is the castle and the ground it watches; the band
+  // between it and the map border is the buffer.
+  const apronRing = insetRect(bounds, bufferDepth);
   const baileyDepth = Math.max(8, Math.round(span * random.nextRange(0.1, 0.15)));
   const innerRing = insetRect(outerRing, baileyDepth);
 
@@ -283,6 +317,7 @@ export function generateLayout({ width, height, random }) {
   const structures = placeStructures(map, random, {
     wardIndex,
     bounds,
+    apron: apronRing,
     outerRing,
     innerRing,
     keepRing,
@@ -290,19 +325,29 @@ export function generateLayout({ width, height, random }) {
   });
 
   const princess = placePrincess(map, random, keepRing, keepDoor);
-  const rally = pickRallyPoint(map, outerGate, outerGateSide, bounds);
 
   return {
     map,
     bounds,
+    apron: apronRing,
+    depths: { approach: approachDepth, apron: apronDepth, buffer: bufferDepth, bailey: baileyDepth },
     rings: { outer: outerRing, inner: innerRing, keep: keepRing },
     sides: { outerGate: outerGateSide, innerGate: innerGateSide, keepDoor: keepDoorSide },
     gates: { outer: outerGate, inner: innerGate, keep: keepDoor },
     towers,
     structures,
     wardIndex,
-    landmarks: { princess, rally, towers, structures },
+    landmarks: { princess, towers, structures, apron: apronRing },
   };
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+/** True for a tile in the buffer: open country beyond the garrison's apron. */
+export function isBufferGround(apron, x, y) {
+  return !rectContains(apron, x, y);
 }
 
 function drawBorder(map) {
@@ -440,12 +485,13 @@ function indexWards(map, { outerRing, innerRing, keepRing }) {
  * A bailey that a patrol cannot walk around is not a bailey, so connectivity
  * is checked per placement rather than repaired afterwards.
  */
-function placeStructures(map, random, { wardIndex, bounds, outerRing, innerRing, keepRing, reservedTiles }) {
+function placeStructures(map, random, { wardIndex, bounds, apron, outerRing, innerRing, keepRing, reservedTiles }) {
   const placed = [];
   const wardIds = { approach: 0, outer: 1, inner: 2 };
   const regions = {
-    // Outbuildings stand off the curtain: the ground under the walls is kept clear.
-    approach: ringSegments(insetRect(bounds, 2), insetRect(outerRing, -3)),
+    // Outbuildings stand on the apron only. The ground under the walls is kept
+    // clear, and so is the buffer — nothing occupies that but the party.
+    approach: ringSegments(insetRect(apron, 1), insetRect(outerRing, -3)),
     outer: ringSegments(insetRect(outerRing, OUTER_CURTAIN_THICKNESS), innerRing),
     inner: ringSegments(insetRect(innerRing, INNER_CURTAIN_THICKNESS), keepRing),
   };
@@ -629,22 +675,6 @@ function placePrincess(map, random, keepRing, keepDoor) {
 
   const pool = candidates.slice(0, Math.max(1, Math.floor(candidates.length / 4)));
   return pool[random.nextInt(0, pool.length)];
-}
-
-/** Where a beaten party falls back to: open ground, out beyond the towers. */
-function pickRallyPoint(map, outerGate, side, bounds) {
-  const inward = INWARD[side];
-  const point = {
-    x: outerGate.outside.x - inward.x * 4,
-    y: outerGate.outside.y - inward.y * 4,
-  };
-
-  const clamped = {
-    x: Math.min(Math.max(point.x, bounds.minX + 2), bounds.maxX - 2),
-    y: Math.min(Math.max(point.y, bounds.minY + 2), bounds.maxY - 2),
-  };
-
-  return nearestOpenTile(map, clamped) ?? clamped;
 }
 
 /** Spirals out from a cell until it finds one that can be stood on. */

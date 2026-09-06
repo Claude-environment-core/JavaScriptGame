@@ -24,7 +24,7 @@ import { CastleTile } from "./layout.js";
 import { CastleMission, MissionPhase } from "./mission.js";
 import { WardType } from "./wards.js";
 
-const MAP_SIZE = 96;
+const MAP_SIZE = 144;
 const ALLY_COUNT = 3;
 const TICK_SECONDS = 1 / 60;
 const FOLLOW_INTERVAL = 0.5;
@@ -282,15 +282,25 @@ function drawTiles() {
   }
 }
 
-function drawExtraction() {
+/**
+ * The buffer: the band around the castle that the garrison neither walks nor
+ * can see across. It is where the party forms up and what it has to get back
+ * to, and nothing else occupies it.
+ */
+function drawBuffer() {
   const cell = scale();
-  const band = state.mission.params.extractionBand * cell;
+  const apron = state.castle.landmarks.apron;
 
   context.fillStyle = COLORS.extraction;
-  context.fillRect(0, 0, canvas.width, band);
-  context.fillRect(0, canvas.height - band, canvas.width, band);
-  context.fillRect(0, 0, band, canvas.height);
-  context.fillRect(canvas.width - band, 0, band, canvas.height);
+  context.fillRect(0, 0, canvas.width, apron.minY * cell);
+  context.fillRect(0, (apron.maxY + 1) * cell, canvas.width, canvas.height - (apron.maxY + 1) * cell);
+  context.fillRect(0, apron.minY * cell, apron.minX * cell, (apron.maxY - apron.minY + 1) * cell);
+  context.fillRect(
+    (apron.maxX + 1) * cell,
+    apron.minY * cell,
+    canvas.width - (apron.maxX + 1) * cell,
+    (apron.maxY - apron.minY + 1) * cell,
+  );
 
   const rally = state.castle.landmarks.rally;
   context.strokeStyle = COLORS.rally;
@@ -396,7 +406,7 @@ function drawGuards() {
 
     context.fillStyle = guardColor(guard);
     context.beginPath();
-    context.arc(x, y, Math.max(2, guard.bodyRadius * cell), 0, Math.PI * 2);
+    context.arc(x, y, Math.max(2.5, guard.bodyRadius * cell), 0, Math.PI * 2);
     context.fill();
 
     // A short whisker for facing: which way a guard looks is the whole game.
@@ -413,10 +423,15 @@ function drawParty() {
   const cell = scale();
   const mission = state.mission;
 
+  // A body is drawn at its true size or a floor, whichever is bigger: on a map
+  // this wide a quarter-tile radius is a pixel and a half, and a party you
+  // cannot find on the canvas is not a debug view.
+  const body = (radius) => Math.max(3, radius * cell);
+
   for (const ally of state.allies) {
     context.fillStyle = ally.isAlive ? COLORS.ally : COLORS.allyDown;
     context.beginPath();
-    context.arc(ally.position.x * cell, ally.position.y * cell, ally.bodyRadius * cell, 0, Math.PI * 2);
+    context.arc(ally.position.x * cell, ally.position.y * cell, body(ally.bodyRadius), 0, Math.PI * 2);
     context.fill();
   }
 
@@ -435,10 +450,22 @@ function drawParty() {
   }
 
   const player = state.player;
+  const px = player.position.x * cell;
+  const py = player.position.y * cell;
+
   context.fillStyle = player.isAlive ? COLORS.player : COLORS.allyDown;
   context.beginPath();
-  context.arc(player.position.x * cell, player.position.y * cell, player.radius * cell * 1.3, 0, Math.PI * 2);
+  context.arc(px, py, body(player.radius * 1.3), 0, Math.PI * 2);
   context.fill();
+
+  // A ring, so you can find yourself in the open ground at a glance.
+  context.strokeStyle = COLORS.player;
+  context.globalAlpha = 0.5;
+  context.lineWidth = 1.5;
+  context.beginPath();
+  context.arc(px, py, body(player.radius) + 5, 0, Math.PI * 2);
+  context.stroke();
+  context.globalAlpha = 1;
 }
 
 /** The alert meter, and the four ward alarms feeding it. */
@@ -467,7 +494,7 @@ function drawAlert() {
 
 function render() {
   drawTiles();
-  drawExtraction();
+  drawBuffer();
 
   if (ui.patrols.checked) {
     drawPatrols();

@@ -7,7 +7,8 @@ Three vanilla-JavaScript browser prototypes:
 - **`index.html`** — a squad simulation: deterministic world generation, A\* routing, and a
   formation that squeezes and spreads to fit the space it is moving through.
 - **`castle.html`** — a procedurally generated castle to infiltrate or storm: four wards, a few
-  justified ways in, and a garrison whose alarm spreads ward by ward.
+  justified ways in, a garrison whose alarm spreads ward by ward, and a buffer of open country
+  around it all that nobody watches and nothing but your party occupies.
 - **`arena.html`** — a top-down arena prototype (collect cores, power the exit, escape).
 
 Everything is plain ES modules with no build step and no runtime dependencies.
@@ -88,6 +89,11 @@ castle itself needs in order to work.
 
 The short version:
 
+- **The party starts outside everything.** The ground beyond the walls is two bands: an apron the
+  garrison patrols and holds in view, and beyond it a buffer deep enough that nobody can see
+  across it. Nothing occupies the buffer but the party — no patrol beat reaches it, no building
+  stands in it — so a run opens with the castle not yet knowing anyone is there. Both bands are
+  sized from how far the garrison can see, which is why the map is as large as it is.
 - **Weak points are justified, not provided.** A sally gate by the cistern, a delivery door on the
   kitchen's timetable, a covered drain, a settled stretch of curtain, a sergeant with debts. Five
   candidates per castle, two to four switched on, never all of them — and an inactive one leaves
@@ -104,10 +110,11 @@ The short version:
 - **Losing is recoverable.** A beaten party falls back to the rally point and can go again against
   a castle that is still awake.
 
-Measured on one castle with nobody intruding: the gates are in somebody's view 84–100% of the
+Measured on one castle with nobody intruding: the gates are in somebody's view 99–100% of the
 time, while the postern and the delivery door have clear windows of six to eight seconds that
 recur. That gap is the stealth game, and it is a property of where the guards walk rather than a
-concession in the level.
+concession in the level. The buffer measures the same way from the other side — its outer third
+is ground no guard can see into at all, and the party musters six tiles inside it.
 
 ### Layout
 

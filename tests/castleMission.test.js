@@ -8,7 +8,7 @@ import { WardId } from "../src/castle/vectors.js";
 import { TraversalType, VectorType, WardType } from "../src/castle/wards.js";
 import { createAgents } from "../src/sim/agent.js";
 
-const SIZE = 64;
+const SIZE = 80;
 
 /** A castle with a party standing at the rally point, out in the open. */
 function stage(seed = 0, { partySize = 3, params = {} } = {}) {

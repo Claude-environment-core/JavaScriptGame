@@ -14,6 +14,7 @@ import { GridMap, TILE_BLOCKED, hasLineOfSight } from "../sim/gridMap.js";
 import { findPath } from "../sim/pathfinding.js";
 import { distance, normalize, scale, subtract, vec2 } from "../sim/vec2.js";
 import { nearestOpenTile } from "./layout.js";
+import { WardType } from "./wards.js";
 
 /** How close is close enough to a waypoint before moving to the next one. */
 export const WAYPOINT_RADIUS = 0.6;
@@ -43,14 +44,17 @@ export class PatrolRoute {
  * reinforcements route on the real map, because an alarm is precisely when a
  * guard stops minding ward boundaries.
  */
-export function wardSubmap(map, wardIndex, wardId, blockedKeys = new Set()) {
+export function wardSubmap(map, wardIndex, wardId, blockedKeys = new Set(), within = null) {
   const submap = new GridMap(map.width, map.height);
 
   for (let y = 0; y < map.height; y += 1) {
     for (let x = 0; x < map.width; x += 1) {
       const inWard = wardIndex[x + y * map.width] === wardId;
       const excluded = blockedKeys.has(`${x},${y}`);
-      submap.set(x, y, inWard && !excluded ? map.get(x, y) : TILE_BLOCKED);
+      const inRange =
+        !within || (x >= within.minX && x <= within.maxX && y >= within.minY && y <= within.maxY);
+
+      submap.set(x, y, inWard && inRange && !excluded ? map.get(x, y) : TILE_BLOCKED);
     }
   }
 
@@ -139,8 +143,13 @@ export function planPatrols({ castle, random, features = new Map(), circuitsPerW
   );
 
   for (const ward of castle.wardList) {
-    const submap = wardSubmap(castle.map, castle.wardIndex, ward.id, sewerTiles);
-    const posts = interestPoints(castle, ward, submap);
+    // A patrol sweeps the ground under its own walls, not the countryside. For
+    // the open ground that means the apron only: past it a beat would be a man
+    // walking a field for no reason, and the buffer would stop being the one
+    // place outside the castle that nobody occupies and nobody is watching.
+    const limit = ward.type === WardType.Approach ? castle.landmarks.apron : null;
+    const submap = wardSubmap(castle.map, castle.wardIndex, ward.id, sewerTiles, limit);
+    const posts = interestPoints(castle, ward, submap, limit ?? ward.bounds);
     const wanted = circuitsPerWard ?? Math.min(3, Math.max(1, Math.round(ward.garrisonSize / 3)));
 
     for (let index = 0; index < wanted; index += 1) {
@@ -180,29 +189,29 @@ export function planPatrols({ castle, random, features = new Map(), circuitsPerW
  * Where a patrol has reason to go: the ward's chokepoints, the corners of the
  * buildings in it, and the corners of the ward itself.
  */
-function interestPoints(castle, ward, submap) {
+function interestPoints(castle, ward, submap, bounds) {
   const points = [];
 
   const push = (cell) => {
-    if (cell && submap.isWalkable(cell.x, cell.y) && !points.some((p) => p.x === cell.x && p.y === cell.y)) {
+    if (cell && !points.some((p) => p.x === cell.x && p.y === cell.y)) {
       points.push({ x: cell.x, y: cell.y });
     }
   };
 
   for (const edge of castle.edgesFrom(ward.id)) {
     if (edge.isActive) {
-      push(nearestWalkable(castle, ward, edge.location));
+      push(nearestWalkable(castle, ward, edge.location, submap));
     }
   }
 
   for (const structure of castle.landmarks.structures ?? []) {
     if (structure.wardId === ward.id) {
-      push(nearestWalkable(castle, ward, { x: structure.box.minX - 1, y: structure.box.minY - 1 }));
-      push(nearestWalkable(castle, ward, { x: structure.box.maxX + 1, y: structure.box.maxY + 1 }));
+      push(nearestWalkable(castle, ward, { x: structure.box.minX - 1, y: structure.box.minY - 1 }, submap));
+      push(nearestWalkable(castle, ward, { x: structure.box.maxX + 1, y: structure.box.maxY + 1 }, submap));
     }
   }
 
-  const { minX, minY, maxX, maxY } = ward.bounds;
+  const { minX, minY, maxX, maxY } = bounds;
   const inset = 3;
   for (const corner of [
     { x: minX + inset, y: minY + inset },
@@ -210,15 +219,24 @@ function interestPoints(castle, ward, submap) {
     { x: maxX - inset, y: maxY - inset },
     { x: minX + inset, y: maxY - inset },
   ]) {
-    push(nearestWalkable(castle, ward, corner));
+    push(nearestWalkable(castle, ward, corner, submap));
   }
 
   return points;
 }
 
-/** The nearest tile to `cell` that is both walkable and in this ward. */
-function nearestWalkable(castle, ward, cell) {
+/**
+ * The nearest tile to `cell` a patrol may stand on.
+ *
+ * Resolved against the ward's patrol submap when one is given, since that map
+ * already carries both the ward and the apron limit — which is what keeps an
+ * approach beat from drifting out into the buffer.
+ */
+function nearestWalkable(castle, ward, cell, submap = null) {
   const width = castle.map.width;
+  const allowed = submap
+    ? (x, y) => submap.isWalkable(x, y)
+    : (x, y) => castle.map.isWalkable(x, y) && castle.wardIndex[x + y * width] === ward.id;
 
   for (let radius = 0; radius <= 6; radius += 1) {
     for (let dy = -radius; dy <= radius; dy += 1) {
@@ -227,14 +245,8 @@ function nearestWalkable(castle, ward, cell) {
           continue;
         }
 
-        const x = cell.x + dx;
-        const y = cell.y + dy;
-
-        if (
-          castle.map.isWalkable(x, y) &&
-          castle.wardIndex[x + y * width] === ward.id
-        ) {
-          return { x, y };
+        if (allowed(cell.x + dx, cell.y + dy)) {
+          return { x: cell.x + dx, y: cell.y + dy };
         }
       }
     }
@@ -310,13 +322,13 @@ export function defendedSideOf(castle, edge) {
  * and it does not disappear because the player is good at using it.
  */
 function sentryBeat(castle, submap, ward, edge) {
-  const anchor = nearestWalkable(castle, ward, edge.location);
+  const anchor = nearestWalkable(castle, ward, edge.location, submap);
   if (!anchor) {
     return null;
   }
 
   const reach = edge.isWeakPoint ? 6 : 2;
-  const ends = beatAlongWall(castle, ward, anchor, reach);
+  const ends = beatAlongWall(castle, ward, anchor, reach, submap);
   const cells = walkBetween(submap, ends[0] ?? anchor, ends[ends.length - 1] ?? anchor, anchor);
 
   return new PatrolRoute({
@@ -352,7 +364,7 @@ function walkBetween(submap, from, to, fallback) {
  * actually runs — found by trying both, since a crossing's own tiles run
  * across the wall and do not say which way it lies.
  */
-function beatAlongWall(castle, ward, anchor, reach) {
+function beatAlongWall(castle, ward, anchor, reach, submap = null) {
   const axes = [
     { x: 1, y: 0 },
     { x: 0, y: 1 },
@@ -362,7 +374,9 @@ function beatAlongWall(castle, ward, anchor, reach) {
 
   for (const axis of axes) {
     const ends = [reach, -reach]
-      .map((step) => nearestWalkable(castle, ward, { x: anchor.x + axis.x * step, y: anchor.y + axis.y * step }))
+      .map((step) =>
+        nearestWalkable(castle, ward, { x: anchor.x + axis.x * step, y: anchor.y + axis.y * step }, submap),
+      )
       .filter(Boolean);
 
     if (ends.length < 2) {
@@ -379,7 +393,7 @@ function beatAlongWall(castle, ward, anchor, reach) {
   }
 
   if (best.length < 2) {
-    const fallback = nearestWalkable(castle, ward, { x: anchor.x + 2, y: anchor.y });
+    const fallback = nearestWalkable(castle, ward, { x: anchor.x + 2, y: anchor.y }, submap);
     return fallback ? [anchor, fallback] : [anchor];
   }
 
