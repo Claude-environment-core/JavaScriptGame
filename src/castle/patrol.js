@@ -10,7 +10,7 @@
  * takes the same route a squad would through the same doorway.
  */
 
-import { GridMap, TILE_BLOCKED } from "../sim/gridMap.js";
+import { GridMap, TILE_BLOCKED, hasLineOfSight } from "../sim/gridMap.js";
 import { findPath } from "../sim/pathfinding.js";
 import { distance, normalize, scale, subtract, vec2 } from "../sim/vec2.js";
 
@@ -33,14 +33,6 @@ export class PatrolRoute {
   get length() {
     return this.waypoints.length;
   }
-
-  waypointAt(index) {
-    if (this.waypoints.length === 0) {
-      return null;
-    }
-
-    return this.waypoints[((index % this.waypoints.length) + this.waypoints.length) % this.waypoints.length];
-  }
 }
 
 /**
@@ -62,6 +54,45 @@ export function wardSubmap(map, wardIndex, wardId, blockedKeys = new Set()) {
   }
 
   return submap;
+}
+
+/**
+ * Pulls a grid path straight.
+ *
+ * A* expands to 4-neighbours, so a leg that is really a diagonal comes back as
+ * a staircase of single-tile steps — which a guard would walk as a zig-zag
+ * across an open bailey. Advancing to the furthest cell still in line of sight
+ * replaces each staircase with the straight line it was approximating.
+ *
+ * The lookahead is bounded because this also runs live, for guards routing to
+ * something they want to look at, and an unbounded scan is quadratic in the
+ * length of the path.
+ */
+export function smoothPath(map, cells, { lookahead = 24 } = {}) {
+  if (!map || cells.length <= 2) {
+    return [...cells];
+  }
+
+  const centre = (cell) => map.gridToWorldCenter(cell.x, cell.y);
+  const kept = [cells[0]];
+  let anchor = 0;
+
+  while (anchor < cells.length - 1) {
+    const limit = Math.min(cells.length - 1, anchor + lookahead);
+    let furthest = anchor + 1;
+
+    for (let i = limit; i > anchor + 1; i -= 1) {
+      if (hasLineOfSight(map, centre(cells[anchor]), centre(cells[i]))) {
+        furthest = i;
+        break;
+      }
+    }
+
+    kept.push(cells[furthest]);
+    anchor = furthest;
+  }
+
+  return kept;
 }
 
 /**
@@ -132,7 +163,7 @@ export function planPatrols({ castle, random, features = new Map(), circuitsPerW
         continue;
       }
 
-      const post = sentryBeat(castle, ward, edge);
+      const post = sentryBeat(castle, submap, ward, edge);
       if (post) {
         routes.push(post);
       }
@@ -242,7 +273,7 @@ function buildCircuit(map, submap, random, posts, ward, id) {
       continue;
     }
 
-    cells.push(...simplifyPath(leg).slice(0, -1));
+    cells.push(...smoothPath(submap, simplifyPath(leg)).slice(0, -1));
   }
 
   if (cells.length < 2) {
@@ -277,14 +308,15 @@ export function defendedSideOf(castle, edge) {
  * stealth game: it is a property of where the guard is, learnable by watching,
  * and it does not disappear because the player is good at using it.
  */
-function sentryBeat(castle, ward, edge) {
+function sentryBeat(castle, submap, ward, edge) {
   const anchor = nearestWalkable(castle, ward, edge.location);
   if (!anchor) {
     return null;
   }
 
   const reach = edge.isWeakPoint ? 6 : 2;
-  const cells = [anchor, ...beatAlongWall(castle, ward, anchor, reach)];
+  const ends = beatAlongWall(castle, ward, anchor, reach);
+  const cells = walkBetween(submap, ends[0] ?? anchor, ends[ends.length - 1] ?? anchor, anchor);
 
   return new PatrolRoute({
     id: `${ward.id}-post-${edge.id}`,
@@ -293,6 +325,25 @@ function sentryBeat(castle, ward, edge) {
     edgeId: edge.id,
     waypoints: cells.map((cell) => castle.map.gridToWorldCenter(cell.x, cell.y)),
   });
+}
+
+/**
+ * A there-and-back beat between two ends, routed rather than assumed.
+ *
+ * The ends are picked geometrically — so many tiles along the wall — and there
+ * may well be a building between them. Pathing the leg and then walking it
+ * back is what keeps a sentry pacing a line he can actually pace.
+ */
+function walkBetween(submap, from, to, fallback) {
+  const path = findPath(submap, from, to);
+
+  if (!path) {
+    return [fallback];
+  }
+
+  const out = smoothPath(submap, simplifyPath(path));
+  const back = out.slice(1, -1).reverse();
+  return out.concat(back);
 }
 
 /**
@@ -328,10 +379,10 @@ function beatAlongWall(castle, ward, anchor, reach) {
 
   if (best.length < 2) {
     const fallback = nearestWalkable(castle, ward, { x: anchor.x + 2, y: anchor.y });
-    return fallback ? [fallback] : [];
+    return fallback ? [anchor, fallback] : [anchor];
   }
 
-  return [best[0], anchor, best[1]];
+  return best;
 }
 
 function pickDistinct(random, items, count) {
@@ -409,7 +460,7 @@ export function routeTo(map, from, goal) {
     return [];
   }
 
-  return simplifyPath(path)
+  return smoothPath(map, simplifyPath(path))
     .slice(1)
     .map((cell) => map.gridToWorldCenter(cell.x, cell.y));
 }

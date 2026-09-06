@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { generateCastle } from "../src/castle/generate.js";
+import { hasLineOfSight } from "../src/sim/gridMap.js";
 import { AlertState, Guard, GuardStance, canSee } from "../src/castle/garrison.js";
 import { WardId } from "../src/castle/vectors.js";
 import { WardType } from "../src/castle/wards.js";
@@ -48,6 +49,34 @@ test("every guard has somewhere to be", () => {
     const cell = castle.map.worldToGrid(guard.position);
     assert.ok(castle.map.isWalkable(cell.x, cell.y), `${guard.id} is standing in a wall`);
     assert.ok(guard.follower.waypoints.length > 0, `${guard.id} has no beat`);
+  }
+});
+
+test("no patrol leg walks through a wall, and no beat leaves its ward", () => {
+  for (let seed = 0; seed < 6; seed += 1) {
+    const { castle } = build(seed);
+
+    for (const ward of castle.wardList) {
+      for (const route of ward.patrolRoutes) {
+        assert.ok(route.waypoints.length > 0, `seed ${seed}: an empty route in ${ward.type}`);
+
+        for (let i = 0; i < route.waypoints.length; i += 1) {
+          const from = route.waypoints[i];
+          // Routes are loops, so the leg back to the start is a leg like any other.
+          const to = route.waypoints[(i + 1) % route.waypoints.length];
+
+          assert.ok(
+            hasLineOfSight(castle.map, from, to),
+            `seed ${seed}: ${route.id} walks through something solid`,
+          );
+          assert.equal(
+            castle.wardAtWorld(from)?.id,
+            ward.id,
+            `seed ${seed}: ${route.id} leaves the ${ward.type}`,
+          );
+        }
+      }
+    }
   }
 });
 
