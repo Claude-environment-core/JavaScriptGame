@@ -170,10 +170,47 @@
       color: #94a3b8;
       font-style: italic;
     }
+
+    /* Navigation between the prototypes. */
+    .demos {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 14px;
+      font-size: 0.9rem;
+    }
+
+    .demos a,
+    .demos [aria-current] {
+      padding: 4px 12px;
+      border: 1px solid #334155;
+      border-radius: 999px;
+      text-decoration: none;
+      color: #cbd5e1;
+    }
+
+    .demos a:hover {
+      background: #1e293b;
+      color: #f8fafc;
+    }
+
+    .demos [aria-current] {
+      background: #1e293b;
+      border-color: #475569;
+      color: #f8fafc;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
   <main class="shell">
+    <nav class="demos" aria-label="Prototypes">
+      <a href="index.html">Squad simulation</a>
+      <span aria-current="page">Castle infiltration</span>
+      <a href="arena.html">Arena</a>
+    </nav>
+
     <header>
       <h1>Castle Infiltration</h1>
       <p>A defended castle, a few justified ways into it, and a garrison that reacts.</p>
@@ -216,6 +253,10 @@
         Force, breach or bribe the way in you are standing next to: <strong>E</strong>.
         You start in the buffer — the open country the garrison neither walks nor can see across.
         Reach the princess, then get her back out to it.
+      </div>
+      <div>
+        How the castle is generated and how the garrison reacts:
+        <a href="https://github.com/Claude-environment-core/JavaScriptGame/blob/main/docs/castle-generation.md">design notes</a>.
       </div>
       <div>
         <span><span class="swatch" style="background:#22d3ee"></span>you</span>

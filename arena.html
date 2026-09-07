@@ -75,10 +75,47 @@
     .footer strong {
       color: #f8fafc;
     }
+
+    /* Navigation between the prototypes. */
+    .demos {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 14px;
+      font-size: 0.9rem;
+    }
+
+    .demos a,
+    .demos [aria-current] {
+      padding: 4px 12px;
+      border: 1px solid #334155;
+      border-radius: 999px;
+      text-decoration: none;
+      color: #cbd5e1;
+    }
+
+    .demos a:hover {
+      background: #1e293b;
+      color: #f8fafc;
+    }
+
+    .demos [aria-current] {
+      background: #1e293b;
+      border-color: #475569;
+      color: #f8fafc;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
   <main class="game-shell">
+    <nav class="demos" aria-label="Prototypes">
+      <a href="index.html">Squad simulation</a>
+      <a href="castle.html">Castle infiltration</a>
+      <span aria-current="page">Arena</span>
+    </nav>
+
     <section class="game-header">
       <div>
         <h1>JavaScript Game World</h1>

@@ -110,10 +110,47 @@
     #status {
       font-variant-numeric: tabular-nums;
     }
+
+    /* Navigation between the prototypes. */
+    .demos {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 14px;
+      font-size: 0.9rem;
+    }
+
+    .demos a,
+    .demos [aria-current] {
+      padding: 4px 12px;
+      border: 1px solid #334155;
+      border-radius: 999px;
+      text-decoration: none;
+      color: #cbd5e1;
+    }
+
+    .demos a:hover {
+      background: #1e293b;
+      color: #f8fafc;
+    }
+
+    .demos [aria-current] {
+      background: #1e293b;
+      border-color: #475569;
+      color: #f8fafc;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
   <main class="shell">
+    <nav class="demos" aria-label="Prototypes">
+      <span aria-current="page">Squad simulation</span>
+      <a href="castle.html">Castle infiltration</a>
+      <a href="arena.html">Arena</a>
+    </nav>
+
     <header>
       <h1>Squad Simulation</h1>
       <p>A formation that squeezes and spreads to fit the space it is moving through.</p>
@@ -147,6 +184,10 @@
     <section class="footer panel">
       <div id="status" aria-live="polite">Loading…</div>
       <div>Move player: <strong>WASD</strong> or <strong>arrow keys</strong>.</div>
+      <div>
+        How the formation works:
+        <a href="https://github.com/Claude-environment-core/JavaScriptGame/blob/main/docs/deformable-virtual-structure.md">design notes</a>.
+      </div>
       <div id="legend">
         <span><span class="swatch" style="background:#4ade80"></span>agents (drawn at body size)</span>
         <span><span class="swatch" style="background:#fb923c"></span>regrouping</span>

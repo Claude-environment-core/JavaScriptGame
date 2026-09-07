@@ -1,15 +1,17 @@
 # JavaScriptGame
 
-[https://claude-environment-core.github.io/JavaScriptGame/](https://claude-environment-core.github.io/JavaScriptGame/)
+Three vanilla-JavaScript browser prototypes. Each one links to the other two, so you can move
+between them from any page.
 
-Three vanilla-JavaScript browser prototypes:
+| Prototype | Play it | What it is |
+| --- | --- | --- |
+| **Squad simulation** | [live](https://claude-environment-core.github.io/JavaScriptGame/) · [`index.html`](index.html) | Deterministic world generation, A\* routing, and a formation that squeezes and spreads to fit the space it is moving through. |
+| **Castle infiltration** | [live](https://claude-environment-core.github.io/JavaScriptGame/castle.html) · [`castle.html`](castle.html) | A procedurally generated castle to sneak into or storm: four wards, a few justified ways in, a garrison whose alarm spreads ward by ward, and a buffer of open country around it all that nobody watches and nothing but your party occupies. |
+| **Arena** | [live](https://claude-environment-core.github.io/JavaScriptGame/arena.html) · [`arena.html`](arena.html) | A top-down arena prototype — collect cores, power the exit, escape. |
 
-- **`index.html`** — a squad simulation: deterministic world generation, A\* routing, and a
-  formation that squeezes and spreads to fit the space it is moving through.
-- **`castle.html`** — a procedurally generated castle to infiltrate or storm: four wards, a few
-  justified ways in, a garrison whose alarm spreads ward by ward, and a buffer of open country
-  around it all that nobody watches and nothing but your party occupies.
-- **`arena.html`** — a top-down arena prototype (collect cores, power the exit, escape).
+Design notes: [the deformable virtual structure](docs/deformable-virtual-structure.md) behind the
+squad's formation, and [procedural castle generation](docs/castle-generation.md) behind the
+castle.
 
 Everything is plain ES modules with no build step and no runtime dependencies.
 
@@ -19,8 +21,9 @@ Everything is plain ES modules with no build step and no runtime dependencies.
 npm run serve         # python3 -m http.server 8000
 ```
 
-Then open <http://localhost:8000/> for the squad simulation, <http://localhost:8000/castle.html>
-for the castle, or <http://localhost:8000/arena.html> for the arena prototype.
+Then open <http://localhost:8000/> for the squad simulation,
+<http://localhost:8000/castle.html> for the castle, or <http://localhost:8000/arena.html> for the
+arena prototype.
 
 ## Test and record
 
@@ -36,12 +39,16 @@ reassignments, coherence.
 
 ## How the squad moves
 
+[Play it](https://claude-environment-core.github.io/JavaScriptGame/) · [`index.html`](index.html) · [design notes](docs/deformable-virtual-structure.md)
+
+
 Agents do not flock. The formation is a **deformable virtual structure**: the group senses the
 room it has, deforms one shared shape to fit, and each agent tracks a slot in that shape.
 Collision avoidance is a constraint on that tracking, not a force competing with it.
 
-`docs/deformable-virtual-structure.md` is the full design — why weighted-sum flocking cannot hold
-a formation, how the deformation works, and what was tried and rejected along the way.
+[`docs/deformable-virtual-structure.md`](docs/deformable-virtual-structure.md) is the full design
+— why weighted-sum flocking cannot hold a formation, how the deformation works, and what was
+tried and rejected along the way.
 
 The short version:
 
@@ -76,6 +83,8 @@ The short version:
 
 ## The castle
 
+[Play it](https://claude-environment-core.github.io/JavaScriptGame/castle.html) · [`castle.html`](castle.html) · [design notes](docs/castle-generation.md)
+
 A castle generated from a seed, which a small group can sneak into or fight through, ending in
 getting the princess out of the keep.
 
@@ -85,7 +94,7 @@ the same side as the outer one, a keep door facing away from the inner gate, so 
 straight run from open ground to the objective — and then cuts into it a few weak points that the
 castle itself needs in order to work.
 
-`docs/castle-generation.md` is the full design.
+[`docs/castle-generation.md`](docs/castle-generation.md) is the full design.
 
 The short version:
 
