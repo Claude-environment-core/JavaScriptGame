@@ -1,6 +1,6 @@
 # JavaScriptGame
 
-Three vanilla-JavaScript browser prototypes. Each one links to the other two, so you can move
+Four vanilla-JavaScript browser prototypes. Each one links to the others, so you can move
 between them from any page.
 
 | Prototype | Play it | What it is |
@@ -8,10 +8,11 @@ between them from any page.
 | **Squad simulation** | [live](https://claude-environment-core.github.io/JavaScriptGame/) · [`index.html`](index.html) | Deterministic world generation, A\* routing, and a formation that squeezes and spreads to fit the space it is moving through. |
 | **Castle infiltration** | [live](https://claude-environment-core.github.io/JavaScriptGame/castle.html) · [`castle.html`](castle.html) | A procedurally generated castle to sneak into or storm: four wards, a few justified ways in, a garrison whose alarm spreads ward by ward, and a buffer of open country around it all that nobody watches and nothing but your party occupies. |
 | **Arena** | [live](https://claude-environment-core.github.io/JavaScriptGame/arena.html) · [`arena.html`](arena.html) | A top-down arena prototype — collect cores, power the exit, escape. |
+| **Strategic RTS** | [live](https://claude-environment-core.github.io/JavaScriptGame/rts.html) · [`rts.html`](rts.html) | Four factions fight over a map of territories. Each faction's strategy comes from a decision model (Jev through OpenRouter's Decisions API), or from a local heuristic that answers in the same shape. |
 
 Design notes: [the deformable virtual structure](docs/deformable-virtual-structure.md) behind the
-squad's formation, and [procedural castle generation](docs/castle-generation.md) behind the
-castle.
+squad's formation, [procedural castle generation](docs/castle-generation.md) behind the
+castle, and [strategy from a decision model](docs/rts-decision-models.md) behind the RTS.
 
 Everything is plain ES modules with no build step and no runtime dependencies.
 
@@ -22,8 +23,8 @@ npm run serve         # python3 -m http.server 8000
 ```
 
 Then open <http://localhost:8000/> for the squad simulation,
-<http://localhost:8000/castle.html> for the castle, or <http://localhost:8000/arena.html> for the
-arena prototype.
+<http://localhost:8000/castle.html> for the castle, <http://localhost:8000/arena.html> for the
+arena prototype, or <http://localhost:8000/rts.html> for the RTS.
 
 ## Test and record
 
@@ -138,6 +139,48 @@ is ground no guard can see into at all, and the party musters six tiles inside i
 | `src/castle/generate.js` | The pipeline, and an audit of what came out |
 | `src/castle/main.js` | Canvas front end for `castle.html` |
 
+## The RTS
+
+[Play it](https://claude-environment-core.github.io/JavaScriptGame/rts.html) · [`rts.html`](rts.html) · [design notes](docs/rts-decision-models.md)
+
+Four factions fight over 26 territories, and nothing in the game decides strategy. Every few
+seconds each faction's commander describes the map from its side and asks a **decision model**
+typed questions: a `choice` per idle army ("hold, or march to which neighbouring region?") and a
+`noul` on the treasury ("raise a new army now?"). The answers, each with the probabilities behind
+it, become orders.
+
+The model it is built against is **Jev** (`typesafe/jev-1.13`), called through OpenRouter's
+Decisions API. Paste an OpenRouter key into the page and set any faction's commander to Jev. The
+key stays in page memory and is sent only to the model endpoint. Any endpoint that speaks the same
+API can be used instead.
+
+- **The heuristic answers in Jev's shape.** It plays the other factions, fills in any question a
+  model fails to answer, and is the baseline a model has to beat.
+- **Bad answers cost one question, not one faction.** Answers are validated per question. Anything
+  missing, mistyped or naming an option that was not offered is replaced by the heuristic, and the
+  round records which answers were whose.
+- **Territory is supply.** Income caps army strength, so taking ground is what lets a faction
+  outgrow its rivals, and matches end.
+
+```bash
+npm run rts-match                                                     # heuristic-only tournament
+OPENROUTER_API_KEY=… npm run rts-match -- --model-factions azure --matches 20 --log rounds.jsonl
+```
+
+### Layout
+
+| Module | Contents |
+| --- | --- |
+| `src/rts/config.js` | Every rule's number, and the factions |
+| `src/rts/mapGen.js` | Terrain, territories, adjacency, capitals, march routes |
+| `src/rts/world.js` | Economy, marching, combat, capture, recruiting, victory |
+| `src/rts/decisions/decisionsApi.js` | Decisions API client and answer validation |
+| `src/rts/decisions/heuristic.js` | Local provider that answers in the same shape |
+| `src/rts/decisions/commander.js` | Builds each faction's request; turns answers into orders |
+| `src/rts/match.js` | A world plus commanders; headless lockstep runner |
+| `src/rts/main.js` | Canvas front end for `rts.html` |
+| `tools/rts-match.js` | Command-line tournament runner |
+
 ## Known limits
 
 - **Role behaviour is a placeholder.** Roles and agent states are carried on agents but no combat,
@@ -148,6 +191,9 @@ is ground no guard can see into at all, and the party musters six tiles inside i
   corridors a large squad spends most of its time in single file.
 - **The castle is a single layer.** Wall-top routes, tower interiors and keep floors are deferred;
   the ward graph carries a `level` and ignores it, so they are new nodes rather than a redesign.
+- **The RTS has not yet played the live model.** Its Jev client was built from OpenRouter's
+  published Decisions API reference and tested against a mocked endpoint. How well Jev plays is
+  still to be measured.
 - **Being caught is attrition, not combat.** There is no combat model in the project, so an
   alerted guard within reach simply wears a party member down — enough that being caught matters,
   and deliberately not enough to be mistaken for a fight.

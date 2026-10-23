@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Browser prototypes: a squad simulation with deformable formations, and a top-down arena.",
+  "description": "Browser prototypes: a squad simulation with deformable formations, a castle infiltration level, a top-down arena, and an RTS whose strategy comes from a decision model.",
   "scripts": {
     "test": "node --test tests/*.test.js",
     "record": "node tools/record-run.js",
-    "serve": "python3 -m http.server 8000"
+    "serve": "python3 -m http.server 8000",
+    "rts-match": "node tools/rts-match.js"
   }
 }

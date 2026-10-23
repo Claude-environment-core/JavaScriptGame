@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Strategic RTS</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #111827;
+      color: #e5e7eb;
+    }
+
+    .shell {
+      width: min(1180px, calc(100vw - 32px));
+      padding: 20px;
+      box-sizing: border-box;
+    }
+
+    header h1,
+    header p {
+      margin: 0;
+    }
+
+    header p {
+      color: #cbd5e1;
+      margin-top: 4px;
+    }
+
+    .panel {
+      padding: 12px 14px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid #334155;
+      border-radius: 10px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.24);
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin: 12px 0;
+      font-size: 0.95rem;
+    }
+
+    .controls label {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    button,
+    select,
+    input {
+      font: inherit;
+      color: #e5e7eb;
+      background: #1e293b;
+      border: 1px solid #475569;
+      border-radius: 8px;
+      padding: 6px 10px;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #334155;
+    }
+
+    input[type="number"] {
+      width: 5.5rem;
+    }
+
+    #apiKey {
+      width: min(16rem, calc(100vw - 190px));
+    }
+
+    #model {
+      width: 12rem;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 3fr) minmax(260px, 1.25fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      border: 1px solid #475569;
+      border-radius: 12px;
+      background: #0f172a;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
+    }
+
+    .side {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .side h2 {
+      margin: 0 0 8px;
+      font-size: 1rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 3px 4px;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    td.commander {
+      white-space: nowrap;
+    }
+
+    td select {
+      padding: 2px 6px;
+      font-size: 0.85rem;
+    }
+
+    .swatch {
+      display: inline-block;
+      width: 0.75rem;
+      height: 0.75rem;
+      border-radius: 3px;
+      margin-right: 6px;
+      vertical-align: -1px;
+    }
+
+    #decisions,
+    #events {
+      font-size: 0.82rem;
+      line-height: 1.45;
+      max-height: 300px;
+      overflow-y: auto;
+      overflow-wrap: anywhere;
+    }
+
+    #decisions .round {
+      padding: 6px 0;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    .muted {
+      color: #94a3b8;
+    }
+
+    .bad {
+      color: #f87171;
+    }
+
+    .src-model {
+      color: #a78bfa;
+    }
+
+    .src-heuristic {
+      color: #94a3b8;
+    }
+
+    .src-fallback {
+      color: #fb923c;
+    }
+
+    .footer {
+      margin-top: 12px;
+      font-size: 0.92rem;
+      color: #cbd5e1;
+      line-height: 1.6;
+    }
+
+    #status {
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Navigation between the prototypes. */
+    .demos {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 14px;
+      font-size: 0.9rem;
+    }
+
+    .demos a,
+    .demos [aria-current] {
+      padding: 4px 12px;
+      border: 1px solid #334155;
+      border-radius: 999px;
+      text-decoration: none;
+      color: #cbd5e1;
+    }
+
+    .demos a:hover {
+      background: #1e293b;
+      color: #f8fafc;
+    }
+
+    .demos [aria-current] {
+      background: #1e293b;
+      border-color: #475569;
+      color: #f8fafc;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <nav class="demos" aria-label="Prototypes">
+      <a href="index.html">Squad simulation</a>
+      <a href="castle.html">Castle infiltration</a>
+      <a href="arena.html">Arena</a>
+      <span aria-current="page">Strategic RTS</span>
+    </nav>
+
+    <header>
+      <h1>Strategic RTS</h1>
+      <p>Four factions fight for the map. Each one's strategy is a decision model's call: Jev, or a local stand-in.</p>
+    </header>
+
+    <section class="controls panel">
+      <label>
+        Seed
+        <input id="seed" type="number" value="0" step="1">
+      </label>
+      <button id="regenerate" type="button">New match</button>
+      <button id="pause" type="button">Pause</button>
+      <label>
+        Speed
+        <select id="speed">
+          <option value="1">1x</option>
+          <option value="2" selected>2x</option>
+          <option value="4">4x</option>
+          <option value="8">8x</option>
+        </select>
+      </label>
+      <label>
+        OpenRouter key
+        <input id="apiKey" type="password" autocomplete="off" placeholder="sk-or-… (kept in this tab only)">
+      </label>
+      <label>
+        Model
+        <input id="model" type="text" spellcheck="false">
+      </label>
+    </section>
+
+    <div class="layout">
+      <canvas id="rtsCanvas" width="1024" height="1024" aria-label="Strategic map canvas"></canvas>
+
+      <div class="side">
+        <section class="panel">
+          <h2>Factions</h2>
+          <table>
+            <thead>
+              <tr><th>Faction</th><th>Regions</th><th>Army</th><th>Gold</th><th>Commander</th></tr>
+            </thead>
+            <tbody id="factions"></tbody>
+          </table>
+        </section>
+
+        <section class="panel">
+          <h2>Latest decisions</h2>
+          <div id="decisions" aria-live="polite"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Events</h2>
+          <div id="events"></div>
+        </section>
+      </div>
+    </div>
+
+    <section class="footer panel">
+      <div id="status" aria-live="polite">Loading…</div>
+      <div>
+        Pick <strong>Jev</strong> as a faction's commander to have a decision model make its calls. Every few seconds it
+        is sent the map as that faction sees it and asked, for each idle army, which neighbouring region to move to
+        (or to hold), and whether to spend gold on a new army. Answers it fails to give are filled in by the local
+        heuristic and shown in <span class="src-fallback">orange</span>.
+      </div>
+      <div>
+        Your key is sent only to the model endpoint and is forgotten when the tab closes. Calls are billed to it.
+      </div>
+      <div>
+        How it works:
+        <a href="https://github.com/Claude-environment-core/JavaScriptGame/blob/main/docs/rts-decision-models.md">design notes</a>.
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="src/rts/main.js"></script>
+</body>
+</html>
